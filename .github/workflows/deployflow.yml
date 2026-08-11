@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+
   pull_request:
     branches:
       - main
@@ -29,15 +30,19 @@ jobs:
       - name: Install backend dependencies
         working-directory: backend
         env:
-        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/deployflow
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/deployflow
         run: npm ci --legacy-peer-deps
 
       - name: Check backend TypeScript
         working-directory: backend
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/deployflow
         run: npx tsc --noEmit
 
       - name: Build backend
         working-directory: backend
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/deployflow
         run: npm run build
 
       - name: Install frontend dependencies
