@@ -1,3 +1,4 @@
+import githubRoutes from "./routes/github";
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
@@ -21,6 +22,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/projects", projectRoutes);
 app.use("/api/deployments", deploymentRoutes);
+app.use("/api/github", githubRoutes);
 
 // Health check
 app.get("/", (req, res) => {

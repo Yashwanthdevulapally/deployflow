@@ -12,6 +12,10 @@ interface Deployment {
   id: number;
   repositoryUrl: string;
   branch: string;
+  commitSha: string | null;
+  commitMessage: string | null;
+  workflowRunId: string | null;
+  workflowUrl: string | null;
   status: string;
   createdAt: string;
   projectId: number;
@@ -46,12 +50,8 @@ function App() {
   const [showDeploymentForm, setShowDeploymentForm] =
     useState(false);
 
-  const [repositoryUrl, setRepositoryUrl] = useState(
-    ""
-  );
-
+  const [repositoryUrl, setRepositoryUrl] = useState("");
   const [branch, setBranch] = useState("main");
-
   const [deploymentMessage, setDeploymentMessage] =
     useState("");
 
@@ -164,9 +164,7 @@ function App() {
         return;
       }
 
-      setCreateMessage(
-        "Project created successfully!"
-      );
+      setCreateMessage("Project created successfully!");
 
       setProjectName("");
       setProjectDescription("");
@@ -179,9 +177,7 @@ function App() {
       }, 1000);
     } catch (error) {
       console.error(error);
-      setCreateMessage(
-        "Cannot connect to backend"
-      );
+      setCreateMessage("Cannot connect to backend");
     }
   };
 
@@ -226,9 +222,7 @@ function App() {
       setDeploymentMessage("");
 
       if (!selectedProject) {
-        setDeploymentMessage(
-          "Please select a project"
-        );
+        setDeploymentMessage("Please select a project");
         return;
       }
 
@@ -274,10 +268,7 @@ function App() {
       setRepositoryUrl("");
       setBranch("main");
 
-      // Refresh deployments
-      await handleViewDeployments(
-        selectedProject
-      );
+      await handleViewDeployments(selectedProject);
 
       setTimeout(() => {
         setShowDeploymentForm(false);
@@ -292,6 +283,38 @@ function App() {
     }
   };
 
+  // SYNC DEPLOYMENT WITH GITHUB ACTIONS
+  const handleSyncDeployment = async (
+    deploymentId: number
+  ) => {
+    try {
+      const token = localStorage.getItem("token");
+
+      const response = await fetch(
+        `http://localhost:5001/api/deployments/${deploymentId}/sync`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error(data);
+        return;
+      }
+
+      if (selectedProject) {
+        await handleViewDeployments(selectedProject);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
   // LOGOUT
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -302,75 +325,106 @@ function App() {
     setDeployments([]);
   };
 
+  const getStatusClass = (status: string) => {
+    return `status status-${status.toLowerCase()}`;
+  };
+
   // DASHBOARD
   if (loggedIn) {
     return (
-      <div>
-        <header>
-          <h1>DeployFlow</h1>
+      <div className="app">
+        <header className="topbar">
+          <div>
+            <h1>DeployFlow</h1>
+            <span className="subtitle">
+              Deployment Management Platform
+            </span>
+          </div>
 
-          <button onClick={handleLogout}>
+          <button
+            className="button secondary"
+            onClick={handleLogout}
+          >
             Logout
           </button>
         </header>
 
-        <main>
-          <h2>Dashboard</h2>
+        <main className="dashboard">
+          <div className="dashboard-heading">
+            <div>
+              <h2>Dashboard</h2>
+              <p>
+                Manage projects and track deployments.
+              </p>
+            </div>
 
-          <p>
-            Welcome to your deployment management
-            dashboard.
-          </p>
+            <button
+              className="button primary"
+              onClick={() =>
+                setShowCreateForm(true)
+              }
+            >
+              + Create Project
+            </button>
+          </div>
 
-          <section>
-            <h3>Projects</h3>
+          {/* PROJECTS */}
+          <section className="panel">
+            <div className="panel-heading">
+              <h3>Projects</h3>
+              <span className="count">
+                {projects.length}
+              </span>
+            </div>
 
             {loadingProjects && (
-              <p>Loading projects...</p>
+              <p className="muted">
+                Loading projects...
+              </p>
             )}
 
             {!loadingProjects &&
               projects.length === 0 && (
-                <p>No projects found.</p>
+                <p className="muted">
+                  No projects found.
+                </p>
               )}
 
-            {projects.map((project) => (
-              <div key={project.id}>
-                <h4>{project.name}</h4>
-
-                <p>
-                  {project.description}
-                </p>
-
-                <p>
-                  Project ID: {project.id}
-                </p>
-
-                <button
-                  onClick={() =>
-                    handleViewDeployments(
-                      project
-                    )
-                  }
+            <div className="project-grid">
+              {projects.map((project) => (
+                <div
+                  className="project-card"
+                  key={project.id}
                 >
-                  View Deployments
-                </button>
-              </div>
-            ))}
+                  <div>
+                    <h4>{project.name}</h4>
+
+                    <p>
+                      {project.description ||
+                        "No description provided."}
+                    </p>
+
+                    <span className="project-id">
+                      Project #{project.id}
+                    </span>
+                  </div>
+
+                  <button
+                    className="button secondary"
+                    onClick={() =>
+                      handleViewDeployments(project)
+                    }
+                  >
+                    View Deployments
+                  </button>
+                </div>
+              ))}
+            </div>
           </section>
 
-          <button
-            onClick={() =>
-              setShowCreateForm(true)
-            }
-          >
-            + Create Project
-          </button>
-
-          {/* CREATE PROJECT FORM */}
-
+          {/* CREATE PROJECT */}
           {showCreateForm && (
-            <section>
+            <section className="panel form-panel">
               <h3>Create New Project</h3>
 
               <input
@@ -382,9 +436,6 @@ function App() {
                 }
               />
 
-              <br />
-              <br />
-
               <textarea
                 placeholder="Project description"
                 value={projectDescription}
@@ -395,69 +446,83 @@ function App() {
                 }
               />
 
-              <br />
-              <br />
+              <div className="form-actions">
+                <button
+                  className="button primary"
+                  onClick={handleCreateProject}
+                >
+                  Create Project
+                </button>
 
-              <button
-                onClick={
-                  handleCreateProject
-                }
-              >
-                Create Project
-              </button>
+                <button
+                  className="button secondary"
+                  onClick={() =>
+                    setShowCreateForm(false)
+                  }
+                >
+                  Cancel
+                </button>
+              </div>
 
-              <button
-                onClick={() =>
-                  setShowCreateForm(false)
-                }
-              >
-                Cancel
-              </button>
-
-              <p>{createMessage}</p>
+              {createMessage && (
+                <p className="form-message">
+                  {createMessage}
+                </p>
+              )}
             </section>
           )}
 
-          {/* DEPLOYMENT SECTION */}
-
+          {/* DEPLOYMENTS */}
           {selectedProject && (
-            <section>
-              <h3>
-                Deployments for{" "}
-                {selectedProject.name}
-              </h3>
+            <section className="panel deployments-panel">
+              <div className="panel-heading">
+                <div>
+                  <h3>
+                    Deployments for{" "}
+                    {selectedProject.name}
+                  </h3>
 
-              {/* CREATE DEPLOYMENT BUTTON */}
+                  <p className="muted">
+                    Track GitHub commits and Actions.
+                  </p>
+                </div>
 
-              <button
-                onClick={() =>
-                  setShowDeploymentForm(true)
-                }
-              >
-                + Create Deployment
-              </button>
+                <div className="heading-actions">
+                  <button
+                    className="button primary"
+                    onClick={() =>
+                      setShowDeploymentForm(true)
+                    }
+                  >
+                    + Create Deployment
+                  </button>
+
+                  <button
+                    className="button secondary"
+                    onClick={() => {
+                      setSelectedProject(null);
+                      setDeployments([]);
+                      setShowDeploymentForm(false);
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
 
               {/* CREATE DEPLOYMENT FORM */}
-
               {showDeploymentForm && (
-                <section>
-                  <h3>
-                    Create New Deployment
-                  </h3>
+                <div className="deployment-form">
+                  <h4>Create New Deployment</h4>
 
                   <input
                     type="text"
                     placeholder="GitHub repository URL"
                     value={repositoryUrl}
                     onChange={(e) =>
-                      setRepositoryUrl(
-                        e.target.value
-                      )
+                      setRepositoryUrl(e.target.value)
                     }
                   />
-
-                  <br />
-                  <br />
 
                   <input
                     type="text"
@@ -468,90 +533,166 @@ function App() {
                     }
                   />
 
-                  <br />
-                  <br />
+                  <div className="form-actions">
+                    <button
+                      className="button primary"
+                      onClick={
+                        handleCreateDeployment
+                      }
+                    >
+                      Create Deployment
+                    </button>
 
-                  <button
-                    onClick={
-                      handleCreateDeployment
-                    }
-                  >
-                    Create Deployment
-                  </button>
+                    <button
+                      className="button secondary"
+                      onClick={() =>
+                        setShowDeploymentForm(false)
+                      }
+                    >
+                      Cancel
+                    </button>
+                  </div>
 
-                  <button
-                    onClick={() =>
-                      setShowDeploymentForm(false)
-                    }
-                  >
-                    Cancel
-                  </button>
-
-                  <p>
-                    {deploymentMessage}
-                  </p>
-                </section>
+                  {deploymentMessage && (
+                    <p className="form-message">
+                      {deploymentMessage}
+                    </p>
+                  )}
+                </div>
               )}
 
               {loadingDeployments && (
-                <p>
+                <p className="muted">
                   Loading deployments...
                 </p>
               )}
 
               {!loadingDeployments &&
                 deployments.length === 0 && (
-                  <p>
+                  <p className="muted">
                     No deployments found.
                   </p>
                 )}
 
-              {deployments.map(
-                (deployment) => (
+              {/* DEPLOYMENT CARDS */}
+              <div className="deployment-list">
+                {deployments.map((deployment) => (
                   <div
+                    className="deployment-card"
                     key={deployment.id}
                   >
-                    <h4>
-                      Deployment #
-                      {deployment.id}
-                    </h4>
+                    <div className="deployment-header">
+                      <div>
+                        <h4>
+                          Deployment #{deployment.id}
+                        </h4>
 
-                    <p>
-                      Repository:{" "}
-                      {
-                        deployment.repositoryUrl
-                      }
-                    </p>
+                        <p className="deployment-date">
+                          {new Date(
+                            deployment.createdAt
+                          ).toLocaleString()}
+                        </p>
+                      </div>
 
-                    <p>
-                      Branch:{" "}
-                      {deployment.branch}
-                    </p>
+                      <span
+                        className={getStatusClass(
+                          deployment.status
+                        )}
+                      >
+                        {deployment.status}
+                      </span>
+                    </div>
 
-                    <p>
-                      Status:{" "}
-                      {deployment.status}
-                    </p>
+                    <div className="deployment-details">
+                      <div>
+                        <span className="detail-label">
+                          Repository
+                        </span>
 
-                    <p>
-                      Created:{" "}
-                      {new Date(
-                        deployment.createdAt
-                      ).toLocaleString()}
-                    </p>
+                        <a
+                          href={deployment.repositoryUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {deployment.repositoryUrl}
+                        </a>
+                      </div>
+
+                      <div>
+                        <span className="detail-label">
+                          Branch
+                        </span>
+
+                        <code>
+                          {deployment.branch}
+                        </code>
+                      </div>
+
+                      {deployment.commitSha && (
+                        <div>
+                          <span className="detail-label">
+                            Commit
+                          </span>
+
+                          <code>
+                            {deployment.commitSha.slice(
+                              0,
+                              7
+                            )}
+                          </code>
+
+                          {deployment.commitMessage && (
+                            <span className="commit-message">
+                              {deployment.commitMessage}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {deployment.workflowRunId && (
+                        <div>
+                          <span className="detail-label">
+                            GitHub Actions
+                          </span>
+
+                          <span>
+                            Run #
+                            {deployment.workflowRunId}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="deployment-actions">
+                      {deployment.workflowUrl && (
+                        <a
+                          className="button secondary"
+                          href={deployment.workflowUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          View GitHub Actions
+                        </a>
+                      )}
+
+                      {deployment.commitSha &&
+                        deployment.status !==
+                          "SUCCESS" && (
+                          <button
+                            className="button secondary"
+                            onClick={() =>
+                              handleSyncDeployment(
+                                deployment.id
+                              )
+                            }
+                          >
+                            Sync Status
+                          </button>
+                        )}
+                    </div>
                   </div>
-                )
-              )}
-
-              <button
-                onClick={() => {
-                  setSelectedProject(null);
-                  setDeployments([]);
-                  setShowDeploymentForm(false);
-                }}
-              >
-                Close
-              </button>
+                ))}
+              </div>
             </section>
           )}
         </main>
@@ -560,17 +701,18 @@ function App() {
   }
 
   // LOGIN PAGE
-
   return (
-    <div>
-      <h1>DeployFlow</h1>
+    <div className="login-page">
+      <div className="login-card">
+        <div className="brand">
+          <h1>DeployFlow</h1>
 
-      <p>
-        Simple deployment management platform
-      </p>
+          <p>
+            Simple deployment management platform
+          </p>
+        </div>
 
-      <div>
-        <h2>Login</h2>
+        <h2>Welcome back</h2>
 
         <input
           type="email"
@@ -581,9 +723,6 @@ function App() {
           }
         />
 
-        <br />
-        <br />
-
         <input
           type="password"
           placeholder="Password"
@@ -593,14 +732,16 @@ function App() {
           }
         />
 
-        <br />
-        <br />
-
-        <button onClick={handleLogin}>
+        <button
+          className="button primary login-button"
+          onClick={handleLogin}
+        >
           Login
         </button>
 
-        <p>{message}</p>
+        {message && (
+          <p className="form-message">{message}</p>
+        )}
       </div>
     </div>
   );

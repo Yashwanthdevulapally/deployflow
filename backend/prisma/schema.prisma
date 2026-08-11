@@ -29,12 +29,16 @@ model Project {
 }
 
 model Deployment {
-  id           Int      @id @default(autoincrement())
+  id            Int      @id @default(autoincrement())
   repositoryUrl String
   branch        String   @default("main")
-  status       String   @default("PENDING")
-  createdAt    DateTime @default(now())
+  commitSha     String?
+  commitMessage String?
+  workflowRunId String?
+workflowUrl   String?
+status        String   @default("PENDING")
+  createdAt     DateTime @default(now())
 
-  projectId    Int
-  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId     Int
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
