@@ -9,6 +9,8 @@ on:
     branches:
       - main
 
+  workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -35,14 +37,10 @@ jobs:
 
       - name: Check backend TypeScript
         working-directory: backend
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/deployflow
         run: npx tsc --noEmit
 
       - name: Build backend
         working-directory: backend
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/deployflow
         run: npm run build
 
       - name: Install frontend dependencies
