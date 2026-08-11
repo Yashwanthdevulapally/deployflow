@@ -114,3 +114,27 @@ export async function getWorkflowRunForCommit(
     updatedAt: run.updated_at
   };
 }
+export async function triggerWorkflow(
+  owner: string,
+  repo: string,
+  workflowFile: string,
+  branch: string
+) {
+  const { Octokit } = await import("octokit");
+
+  const octokit = new Octokit({
+  auth: process.env.GITHUB_TOKEN
+});
+
+  const response =
+    await octokit.rest.actions.createWorkflowDispatch({
+      owner,
+      repo,
+      workflow_id: workflowFile,
+      ref: branch
+    });
+
+  return {
+    success: response.status === 204
+  };
+}

@@ -1,9 +1,12 @@
 import express from "express";
 import { prisma } from "../prisma";
+
 import {
   getLatestCommit,
-  getWorkflowRunForCommit
+  getWorkflowRunForCommit,
+  triggerWorkflow
 } from "../services/github";
+
 import {
   authenticateToken,
   AuthRequest
@@ -11,17 +14,26 @@ import {
 
 const router = express.Router();
 
-// Create a deployment
+
+// =====================================================
+// CREATE DEPLOYMENT
+// =====================================================
+
 router.post(
   "/",
   authenticateToken,
   async (req: AuthRequest, res) => {
     try {
-      const { projectId, repositoryUrl, branch } = req.body;
+      const {
+        projectId,
+        repositoryUrl,
+        branch
+      } = req.body;
 
       if (!projectId || !repositoryUrl) {
         return res.status(400).json({
-          message: "Project ID and repository URL are required"
+          message:
+            "Project ID and repository URL are required"
         });
       }
 
@@ -39,10 +51,13 @@ router.post(
         });
       }
 
-      // Use main if no branch is provided
+      // Default branch
       const deploymentBranch = branch || "main";
 
-      // Extract GitHub owner and repository name
+      // -----------------------------------------------
+      // Extract GitHub owner and repository
+      // -----------------------------------------------
+
       const githubPath = repositoryUrl
         .replace("https://github.com/", "")
         .replace(".git", "")
@@ -56,53 +71,114 @@ router.post(
         });
       }
 
-      // Fetch the latest real commit from GitHub
+      // -----------------------------------------------
+      // Get latest GitHub commit
+      // -----------------------------------------------
+
       const latestCommit = await getLatestCommit(
         owner,
         repo,
         deploymentBranch
       );
 
-      // Create deployment with real GitHub commit information
-      const deployment = await prisma.deployment.create({
-        data: {
-          projectId: Number(projectId),
-          repositoryUrl,
-          branch: deploymentBranch,
-          commitSha: latestCommit.sha,
-          commitMessage: latestCommit.message,
-          status: "PENDING"
-        }
-      });
+      // -----------------------------------------------
+      // Create deployment
+      // -----------------------------------------------
 
-      res.status(201).json({
-        message: "Deployment created successfully",
+      const deployment =
+        await prisma.deployment.create({
+          data: {
+            projectId: Number(projectId),
+            repositoryUrl,
+            branch: deploymentBranch,
+            commitSha: latestCommit.sha,
+            commitMessage: latestCommit.message,
+            status: "PENDING"
+          }
+        });
+
+      // -----------------------------------------------
+      // Trigger GitHub Actions
+      // -----------------------------------------------
+
+      try {
+        await triggerWorkflow(
+          owner,
+          repo,
+          "deployflow.yml",
+          deploymentBranch
+        );
+
+        console.log(
+          `GitHub Actions triggered for deployment #${deployment.id}`
+        );
+      } catch (githubError) {
+        console.error(
+          "Failed to trigger GitHub Actions:",
+          githubError
+        );
+
+        // Mark deployment as failed if GitHub
+        // Actions could not be triggered
+
+        const failedDeployment =
+          await prisma.deployment.update({
+            where: {
+              id: deployment.id
+            },
+            data: {
+              status: "FAILED"
+            }
+          });
+
+        return res.status(500).json({
+          message:
+            "Deployment created but GitHub Actions could not be triggered",
+          deployment: failedDeployment
+        });
+      }
+
+      // -----------------------------------------------
+      // Response
+      // -----------------------------------------------
+
+      return res.status(201).json({
+        message:
+          "Deployment created and GitHub Actions triggered",
         deployment
       });
+
     } catch (error) {
       console.error(error);
 
-      res.status(500).json({
+      return res.status(500).json({
         message: "Something went wrong"
       });
     }
   }
 );
 
-// Get deployments for a project
+
+// =====================================================
+// GET DEPLOYMENTS FOR PROJECT
+// =====================================================
+
 router.get(
   "/project/:projectId",
   authenticateToken,
   async (req: AuthRequest, res) => {
     try {
-      const projectId = Number(req.params.projectId);
+      const projectId =
+        Number(req.params.projectId);
 
-      const project = await prisma.project.findFirst({
-        where: {
-          id: projectId,
-          userId: req.user!.userId
-        }
-      });
+      // Check project ownership
+      const project =
+        await prisma.project.findFirst({
+          where: {
+            id: projectId,
+            userId: req.user!.userId
+          }
+        });
 
       if (!project) {
         return res.status(404).json({
@@ -110,43 +186,56 @@ router.get(
         });
       }
 
-      const deployments = await prisma.deployment.findMany({
-        where: {
-          projectId
-        },
-        orderBy: {
-          createdAt: "desc"
-        }
-      });
+      const deployments =
+        await prisma.deployment.findMany({
+          where: {
+            projectId
+          },
+          orderBy: {
+            createdAt: "desc"
+          }
+        });
 
-      res.json({
+      return res.json({
         deployments
       });
+
     } catch (error) {
       console.error(error);
 
-      res.status(500).json({
+      return res.status(500).json({
         message: "Something went wrong"
       });
     }
   }
 );
-// Sync deployment status with GitHub Actions
+
+
+// =====================================================
+// SYNC DEPLOYMENT WITH GITHUB ACTIONS
+// =====================================================
+
 router.post(
   "/:deploymentId/sync",
   authenticateToken,
   async (req: AuthRequest, res) => {
     try {
-      const deploymentId = Number(req.params.deploymentId);
+      const deploymentId =
+        Number(req.params.deploymentId);
 
-      const deployment = await prisma.deployment.findUnique({
-        where: {
-          id: deploymentId
-        },
-        include: {
-          project: true
-        }
-      });
+      // -----------------------------------------------
+      // Find deployment
+      // -----------------------------------------------
+
+      const deployment =
+        await prisma.deployment.findUnique({
+          where: {
+            id: deploymentId
+          },
+          include: {
+            project: true
+          }
+        });
 
       if (!deployment) {
         return res.status(404).json({
@@ -154,48 +243,83 @@ router.post(
         });
       }
 
-      if (deployment.project.userId !== req.user!.userId) {
+      // -----------------------------------------------
+      // Check ownership
+      // -----------------------------------------------
+
+      if (
+        deployment.project.userId !==
+        req.user!.userId
+      ) {
         return res.status(403).json({
-          message: "You are not allowed to sync this deployment"
+          message:
+            "You are not allowed to sync this deployment"
         });
       }
+
+      // -----------------------------------------------
+      // Check commit
+      // -----------------------------------------------
 
       if (!deployment.commitSha) {
         return res.status(400).json({
-          message: "Deployment does not have a GitHub commit"
+          message:
+            "Deployment does not have a GitHub commit"
         });
       }
 
-      const githubPath = deployment.repositoryUrl
-        .replace("https://github.com/", "")
-        .replace(".git", "")
-        .replace(/\/$/, "");
+      // -----------------------------------------------
+      // Extract GitHub repository
+      // -----------------------------------------------
 
-      const [owner, repo] = githubPath.split("/");
+      const githubPath =
+        deployment.repositoryUrl
+          .replace(
+            "https://github.com/",
+            ""
+          )
+          .replace(".git", "")
+          .replace(/\/$/, "");
+
+      const [owner, repo] =
+        githubPath.split("/");
 
       if (!owner || !repo) {
         return res.status(400).json({
-          message: "Invalid GitHub repository URL"
+          message:
+            "Invalid GitHub repository URL"
         });
       }
 
-      const workflowRun = await getWorkflowRunForCommit(
-        owner,
-        repo,
-        deployment.branch,
-        deployment.commitSha
-      );
+      // -----------------------------------------------
+      // Find workflow run for exact commit
+      // -----------------------------------------------
+
+      const workflowRun =
+        await getWorkflowRunForCommit(
+          owner,
+          repo,
+          deployment.branch,
+          deployment.commitSha
+        );
 
       if (!workflowRun) {
         return res.status(404).json({
-          message: "No GitHub Actions run found for this commit"
+          message:
+            "No GitHub Actions run found for this commit"
         });
       }
 
+      // -----------------------------------------------
+      // Determine deployment status
+      // -----------------------------------------------
+
       let deploymentStatus = "PENDING";
 
-      if (workflowRun.status === "in_progress" ||
-          workflowRun.status === "queued") {
+      if (
+        workflowRun.status === "queued" ||
+        workflowRun.status === "in_progress"
+      ) {
         deploymentStatus = "RUNNING";
       }
 
@@ -213,40 +337,71 @@ router.post(
         deploymentStatus = "FAILED";
       }
 
+      // -----------------------------------------------
+      // Update deployment
+      // -----------------------------------------------
+
       const updatedDeployment =
         await prisma.deployment.update({
           where: {
             id: deploymentId
           },
           data: {
-  workflowRunId: String(workflowRun.id),
-  workflowUrl: workflowRun.htmlUrl,
-  status: deploymentStatus
-}
+            workflowRunId:
+              String(workflowRun.id),
+
+            workflowUrl:
+              workflowRun.htmlUrl,
+
+            status:
+              deploymentStatus
+          }
         });
 
-      res.json({
-        message: "Deployment synced with GitHub Actions",
-        deployment: updatedDeployment,
-        githubActions: workflowRun
+      // -----------------------------------------------
+      // Response
+      // -----------------------------------------------
+
+      return res.json({
+        message:
+          "Deployment synced with GitHub Actions",
+
+        deployment:
+          updatedDeployment,
+
+        githubActions:
+          workflowRun
       });
+
     } catch (error) {
       console.error(error);
 
-      res.status(500).json({
-        message: "Failed to sync deployment with GitHub Actions"
+      return res.status(500).json({
+        message:
+          "Failed to sync deployment with GitHub Actions"
       });
     }
   }
 );
-// Update deployment status
+
+
+// =====================================================
+// MANUAL UPDATE DEPLOYMENT STATUS
+// =====================================================
+
 router.patch(
   "/:deploymentId/status",
   authenticateToken,
   async (req: AuthRequest, res) => {
     try {
-      const deploymentId = Number(req.params.deploymentId);
+      const deploymentId =
+        Number(req.params.deploymentId);
+
       const { status } = req.body;
+
+      // -----------------------------------------------
+      // Allowed statuses
+      // -----------------------------------------------
 
       const allowedStatuses = [
         "PENDING",
@@ -255,32 +410,53 @@ router.patch(
         "FAILED"
       ];
 
-      if (!allowedStatuses.includes(status)) {
+      if (
+        !allowedStatuses.includes(status)
+      ) {
         return res.status(400).json({
-          message: "Invalid deployment status"
+          message:
+            "Invalid deployment status"
         });
       }
 
-      const deployment = await prisma.deployment.findUnique({
-        where: {
-          id: deploymentId
-        },
-        include: {
-          project: true
-        }
-      });
+      // -----------------------------------------------
+      // Find deployment
+      // -----------------------------------------------
+
+      const deployment =
+        await prisma.deployment.findUnique({
+          where: {
+            id: deploymentId
+          },
+          include: {
+            project: true
+          }
+        });
 
       if (!deployment) {
         return res.status(404).json({
-          message: "Deployment not found"
+          message:
+            "Deployment not found"
         });
       }
 
-      if (deployment.project.userId !== req.user!.userId) {
+      // -----------------------------------------------
+      // Check ownership
+      // -----------------------------------------------
+
+      if (
+        deployment.project.userId !==
+        req.user!.userId
+      ) {
         return res.status(403).json({
-          message: "You are not allowed to update this deployment"
+          message:
+            "You are not allowed to update this deployment"
         });
       }
+
+      // -----------------------------------------------
+      // Update status
+      // -----------------------------------------------
 
       const updatedDeployment =
         await prisma.deployment.update({
@@ -292,18 +468,24 @@ router.patch(
           }
         });
 
-      res.json({
-        message: "Deployment status updated",
-        deployment: updatedDeployment
+      return res.json({
+        message:
+          "Deployment status updated",
+
+        deployment:
+          updatedDeployment
       });
+
     } catch (error) {
       console.error(error);
 
-      res.status(500).json({
-        message: "Something went wrong"
+      return res.status(500).json({
+        message:
+          "Something went wrong"
       });
     }
   }
 );
+
 
 export default router;

@@ -8,6 +8,7 @@ import authRoutes from "./routes/auth";
 import userRoutes from "./routes/user";
 import projectRoutes from "./routes/project";
 import deploymentRoutes from "./routes/deployment";
+import { startDeploymentChecker } from "./services/deployment-checker";
 
 const app = express();
 
@@ -50,5 +51,9 @@ app.get("/api/test-db", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`DeployFlow backend running on http://localhost:${PORT}`);
+  console.log(
+    `DeployFlow backend running on http://localhost:${PORT}`
+  );
+
+  startDeploymentChecker();
 });
