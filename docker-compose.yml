@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: deployflow-postgres
+    restart: always
+
+    environment:
+      POSTGRES_USER: deployflow
+      POSTGRES_PASSWORD: deployflow123
+      POSTGRES_DB: deployflow_db
+
+    ports:
+      - "5433:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+
+    container_name: deployflow-backend
+    restart: always
+
+    environment:
+      DATABASE_URL: "postgresql://deployflow:deployflow123@postgres:5432/deployflow_db"
+      JWT_SECRET: "deployflow_secret_key"
+
+    ports:
+      - "5001:5001"
+
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
