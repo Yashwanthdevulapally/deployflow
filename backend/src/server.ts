@@ -11,7 +11,6 @@ import deploymentRoutes from "./routes/deployment";
 import { startDeploymentChecker } from "./services/deployment-checker";
 
 const app = express();
-
 const PORT = 5001;
 
 // Middleware
@@ -50,10 +49,10 @@ app.get("/api/test-db", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(
-    `DeployFlow backend running on http://localhost:${PORT}`
-  );
-
-  startDeploymentChecker();
+// Start server
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`DeployFlow backend running on port ${PORT}`);
 });
+
+// Initialize background worker
+startDeploymentChecker();

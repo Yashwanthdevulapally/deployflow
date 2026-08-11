@@ -8,7 +8,7 @@ RUN npm install --ignore-scripts
 
 COPY . .
 
-ENV DATABASE_URL=postgresql://postgres:postgres@localhost:5432/deployflow
+
 
 RUN npx prisma generate
 
