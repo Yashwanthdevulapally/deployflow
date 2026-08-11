@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-
   pull_request:
     branches:
       - main
@@ -21,6 +20,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Check Node and npm versions
+        run: |
+          node -v
+          npm -v
 
       - name: Install backend dependencies
         working-directory: backend
