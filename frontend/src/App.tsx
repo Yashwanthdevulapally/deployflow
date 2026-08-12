@@ -13,6 +13,7 @@ interface Deployment {
   id: number;
   repositoryUrl: string;
   branch: string;
+  workflow: string;
   status: string;
   createdAt: string;
   projectId: number;
@@ -51,8 +52,8 @@ function App() {
 
   const [repositoryUrl, setRepositoryUrl] = useState("");
   const [branch, setBranch] = useState("main");
-  // Step 1: default workflow file changed from "deploy.yml" to "deployflow.yml"
   const [workflow, setWorkflow] = useState("deployflow.yml");
+  const [workflows, setWorkflows] = useState<{ id: number; name: string; path: string; state: string }[]>([]);
   const [deploymentMessage, setDeploymentMessage] = useState("");
 
   const [activePage, setActivePage] = useState("Dashboard");
@@ -232,6 +233,128 @@ function App() {
     }
   };
 
+  const handleFetchWorkflows = async () => {
+    if (!repositoryUrl.trim()) {
+      setWorkflows([]);
+      setWorkflow("");
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem("token");
+
+      const response = await fetch(
+        `${API_BASE_URL}/api/deployments/workflows?repositoryUrl=${encodeURIComponent(repositoryUrl.trim())}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error(
+          "Failed to fetch workflows:",
+          data.message
+        );
+        setWorkflows([]);
+        setWorkflow("");
+        return;
+      }
+
+      setWorkflows(data.workflows || []);
+
+      if (data.workflows?.length > 0) {
+        const firstWorkflow = data.workflows[0];
+        setWorkflow(
+          firstWorkflow.path.split("/").pop() || ""
+        );
+      } else {
+        setWorkflow("");
+      }
+    } catch (error) {
+      console.error(
+        "Error fetching workflows:",
+        error
+      );
+      setWorkflows([]);
+      setWorkflow("");
+    }
+  };
+
+  useEffect(() => {
+    if (!showDeploymentForm || !repositoryUrl.trim()) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      handleFetchWorkflows();
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [repositoryUrl, showDeploymentForm]);
+  const pollDeploymentStatus = async (
+  deploymentId: number
+) => {
+  const token = localStorage.getItem("token");
+
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/api/deployments/${deploymentId}/status`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error(
+        "Failed to get deployment status:",
+        data.message
+      );
+      return true;
+    }
+
+    setDeployments((currentDeployments) =>
+      currentDeployments.map((deployment) =>
+        deployment.id === deploymentId
+          ? {
+              ...deployment,
+              status: data.status,
+              workflowRunId:
+                data.workflowRunId ??
+                deployment.workflowRunId,
+              workflowUrl:
+                data.workflowUrl ??
+                deployment.workflowUrl,
+            }
+          : deployment
+      )
+    );
+
+    // Stop polling when GitHub finishes
+    if (
+      data.status === "SUCCESS" ||
+      data.status === "FAILED"
+    ) {
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    console.error(
+      "Error checking deployment status:",
+      error
+    );
+
+    return false;
+  }
+};
   const handleCreateDeployment = async () => {
     try {
       setDeploymentMessage("");
@@ -258,7 +381,6 @@ function App() {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          // Step 3: request now sends the workflow field too
           body: JSON.stringify({
             projectId: selectedProject.id,
             repositoryUrl,
@@ -284,10 +406,32 @@ function App() {
 
       setRepositoryUrl("");
       setBranch("main");
-      setWorkflow("deployflow.yml");
+      setWorkflow("");
+      setWorkflows([]);
 
       await handleViewDeployments(selectedProject);
+      const deploymentId = data.deployment?.id;
 
+if (deploymentId) {
+  const interval = setInterval(
+    async () => {
+      const finished =
+        await pollDeploymentStatus(
+          deploymentId
+        );
+
+      if (finished) {
+        clearInterval(interval);
+
+        // Refresh deployment history
+        await handleViewDeployments(
+          selectedProject
+        );
+      }
+    },
+    3000
+  );
+}
       setTimeout(() => {
         setShowDeploymentForm(false);
         setDeploymentMessage("");
@@ -859,6 +1003,11 @@ function App() {
                               </span>
 
                               <span>
+                                ⚙{" "}
+                                {deployment.workflow || "deploy.yml"}
+                              </span>
+
+                              <span>
                                 {new Date(
                                   deployment.createdAt
                                 ).toLocaleString()}
@@ -1083,22 +1232,39 @@ function App() {
 
               </div>
 
-              {/* Step 2: Workflow input, added after Branch */}
               <div className="form-group">
+
                 <label>
                   GitHub Actions workflow
                 </label>
 
-                <input
-                  type="text"
-                  placeholder="deployflow.yml"
+                <select
                   value={workflow}
-                  onChange={(e) => setWorkflow(e.target.value)}
-                />
+                  onChange={(e) =>
+                    setWorkflow(e.target.value)
+                  }
+                  disabled={workflows.length === 0}
+                >
+                  {workflows.length === 0 ? (
+                    <option value="">
+                      No workflows found
+                    </option>
+                  ) : (
+                    workflows.map((item) => (
+                      <option
+                        key={item.id}
+                        value={item.path.split("/").pop() || ""}
+                      >
+                        {item.name} ({item.path.split("/").pop()})
+                      </option>
+                    ))
+                  )}
+                </select>
 
                 <small>
-                  Workflow file inside .github/workflows/
+                  Workflows are automatically loaded from .github/workflows/
                 </small>
+
               </div>
 
               <div className="deploy-info">

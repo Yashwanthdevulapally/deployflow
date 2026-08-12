@@ -4,6 +4,7 @@ import { prisma } from "../prisma";
 import {
   getLatestCommit,
   getWorkflowRunForCommit,
+  getWorkflows,
   triggerWorkflow
 } from "../services/github";
 
@@ -15,6 +16,69 @@ import {
 const router = express.Router();
 
 
+// =====================================================
+// GET GITHUB WORKFLOWS
+// =====================================================
+
+router.get(
+  "/workflows",
+  authenticateToken,
+  async (req: AuthRequest, res) => {
+    try {
+      const repositoryUrl =
+        req.query.repositoryUrl as string;
+
+      if (!repositoryUrl) {
+        return res.status(400).json({
+          message: "Repository URL is required"
+        });
+      }
+
+      // -----------------------------------------------
+      // Extract GitHub owner and repository
+      // -----------------------------------------------
+
+      const githubPath = repositoryUrl
+        .replace("https://github.com/", "")
+        .replace(".git", "")
+        .replace(/\/$/, "");
+
+      const [owner, repo] =
+        githubPath.split("/");
+
+      if (!owner || !repo) {
+        return res.status(400).json({
+          message: "Invalid GitHub repository URL"
+        });
+      }
+
+      // -----------------------------------------------
+      // Get workflows from GitHub
+      // -----------------------------------------------
+
+      const workflows = await getWorkflows(
+        owner,
+        repo
+      );
+
+      return res.status(200).json({
+        workflows
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Failed to fetch GitHub workflows:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to fetch GitHub workflows"
+      });
+    }
+  }
+);
 // =====================================================
 // CREATE DEPLOYMENT
 // =====================================================
@@ -530,6 +594,146 @@ router.patch(
       return res.status(500).json({
         message:
           "Something went wrong"
+      });
+    }
+  }
+);
+
+
+// =====================================================
+// GET LIVE GITHUB ACTIONS STATUS
+// =====================================================
+
+router.get(
+  "/:id/status",
+  authenticateToken,
+  async (req: AuthRequest, res) => {
+    try {
+      const deploymentId = Number(req.params.id);
+
+      if (!deploymentId) {
+        return res.status(400).json({
+          message: "Invalid deployment ID"
+        });
+      }
+
+      // Find deployment and make sure it belongs
+      // to the logged-in user
+      const deployment =
+        await prisma.deployment.findFirst({
+          where: {
+            id: deploymentId,
+            project: {
+              userId: req.user!.userId
+            }
+          },
+          include: {
+            project: true
+          }
+        });
+
+      if (!deployment) {
+        return res.status(404).json({
+          message: "Deployment not found"
+        });
+      }
+
+      // If we don't have a commit SHA yet,
+      // there is nothing to check
+      if (!deployment.commitSha) {
+        return res.json({
+          status: deployment.status,
+          workflowRunId:
+            deployment.workflowRunId,
+          workflowUrl:
+            deployment.workflowUrl
+        });
+      }
+
+      // Extract GitHub repository
+      const githubPath = deployment.repositoryUrl
+        .replace("https://github.com/", "")
+        .replace(".git", "")
+        .replace(/\/$/, "");
+
+      const [owner, repo] =
+        githubPath.split("/");
+
+      if (!owner || !repo) {
+        return res.status(400).json({
+          message: "Invalid GitHub repository URL"
+        });
+      }
+
+      // Ask GitHub for the workflow run
+      // belonging to this commit
+      const workflowRun =
+        await getWorkflowRunForCommit(
+          owner,
+          repo,
+          deployment.branch,
+          deployment.commitSha
+        );
+
+      // Workflow may take a short time to appear
+      if (!workflowRun) {
+        return res.json({
+          status: deployment.status,
+          workflowRunId:
+            deployment.workflowRunId,
+          workflowUrl:
+            deployment.workflowUrl
+        });
+      }
+
+      // Convert GitHub status into our
+      // DeployFlow status
+      let deploymentStatus = "RUNNING";
+
+      if (
+        workflowRun.status === "completed"
+      ) {
+        if (
+          workflowRun.conclusion === "success"
+        ) {
+          deploymentStatus = "SUCCESS";
+        } else {
+          deploymentStatus = "FAILED";
+        }
+      }
+
+      // Save latest GitHub information
+      const updatedDeployment =
+        await prisma.deployment.update({
+          where: {
+            id: deployment.id
+          },
+          data: {
+            workflowRunId:
+              String(workflowRun.id),
+            workflowUrl:
+              workflowRun.htmlUrl,
+            status: deploymentStatus
+          }
+        });
+
+      return res.json({
+        status: updatedDeployment.status,
+        workflowRunId:
+          updatedDeployment.workflowRunId,
+        workflowUrl:
+          updatedDeployment.workflowUrl
+      });
+
+    } catch (error) {
+      console.error(
+        "Failed to fetch deployment status:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to fetch deployment status"
       });
     }
   }
