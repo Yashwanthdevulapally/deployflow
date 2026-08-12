@@ -32,11 +32,12 @@ model Deployment {
   id            Int      @id @default(autoincrement())
   repositoryUrl String
   branch        String   @default("main")
+  workflow      String   @default("deploy.yml")
   commitSha     String?
   commitMessage String?
   workflowRunId String?
-workflowUrl   String?
-status        String   @default("PENDING")
+  workflowUrl   String?
+  status        String   @default("PENDING")
   createdAt     DateTime @default(now())
 
   projectId     Int

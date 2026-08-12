@@ -27,7 +27,8 @@ router.post(
       const {
         projectId,
         repositoryUrl,
-        branch
+        branch,
+        workflow
       } = req.body;
 
       if (!projectId || !repositoryUrl) {
@@ -54,6 +55,11 @@ router.post(
       // Default branch
       const deploymentBranch = branch || "main";
 
+      // Default workflow
+      const deploymentWorkflow =
+        workflow || "deploy.yml";
+
+
       // -----------------------------------------------
       // Extract GitHub owner and repository
       // -----------------------------------------------
@@ -71,6 +77,7 @@ router.post(
         });
       }
 
+
       // -----------------------------------------------
       // Get latest GitHub commit
       // -----------------------------------------------
@@ -80,6 +87,7 @@ router.post(
         repo,
         deploymentBranch
       );
+
 
       // -----------------------------------------------
       // Create deployment
@@ -91,11 +99,13 @@ router.post(
             projectId: Number(projectId),
             repositoryUrl,
             branch: deploymentBranch,
+            workflow: deploymentWorkflow,
             commitSha: latestCommit.sha,
             commitMessage: latestCommit.message,
             status: "PENDING"
           }
         });
+
 
       // -----------------------------------------------
       // Trigger GitHub Actions
@@ -105,14 +115,16 @@ router.post(
         await triggerWorkflow(
           owner,
           repo,
-          "deployflow.yml",
+          deploymentWorkflow,
           deploymentBranch
         );
 
         console.log(
           `GitHub Actions triggered for deployment #${deployment.id}`
         );
+
       } catch (githubError) {
+
         console.error(
           "Failed to trigger GitHub Actions:",
           githubError
@@ -138,6 +150,7 @@ router.post(
         });
       }
 
+
       // -----------------------------------------------
       // Response
       // -----------------------------------------------
@@ -149,6 +162,7 @@ router.post(
       });
 
     } catch (error) {
+
       console.error(error);
 
       return res.status(500).json({
@@ -168,8 +182,10 @@ router.get(
   authenticateToken,
   async (req: AuthRequest, res) => {
     try {
+
       const projectId =
         Number(req.params.projectId);
+
 
       // Check project ownership
       const project =
@@ -180,11 +196,13 @@ router.get(
           }
         });
 
+
       if (!project) {
         return res.status(404).json({
           message: "Project not found"
         });
       }
+
 
       const deployments =
         await prisma.deployment.findMany({
@@ -196,11 +214,13 @@ router.get(
           }
         });
 
+
       return res.json({
         deployments
       });
 
     } catch (error) {
+
       console.error(error);
 
       return res.status(500).json({
@@ -220,8 +240,10 @@ router.post(
   authenticateToken,
   async (req: AuthRequest, res) => {
     try {
+
       const deploymentId =
         Number(req.params.deploymentId);
+
 
       // -----------------------------------------------
       // Find deployment
@@ -237,11 +259,13 @@ router.post(
           }
         });
 
+
       if (!deployment) {
         return res.status(404).json({
           message: "Deployment not found"
         });
       }
+
 
       // -----------------------------------------------
       // Check ownership
@@ -257,6 +281,7 @@ router.post(
         });
       }
 
+
       // -----------------------------------------------
       // Check commit
       // -----------------------------------------------
@@ -267,6 +292,7 @@ router.post(
             "Deployment does not have a GitHub commit"
         });
       }
+
 
       // -----------------------------------------------
       // Extract GitHub repository
@@ -281,8 +307,10 @@ router.post(
           .replace(".git", "")
           .replace(/\/$/, "");
 
+
       const [owner, repo] =
         githubPath.split("/");
+
 
       if (!owner || !repo) {
         return res.status(400).json({
@@ -290,6 +318,7 @@ router.post(
             "Invalid GitHub repository URL"
         });
       }
+
 
       // -----------------------------------------------
       // Find workflow run for exact commit
@@ -303,6 +332,7 @@ router.post(
           deployment.commitSha
         );
 
+
       if (!workflowRun) {
         return res.status(404).json({
           message:
@@ -310,11 +340,13 @@ router.post(
         });
       }
 
+
       // -----------------------------------------------
       // Determine deployment status
       // -----------------------------------------------
 
       let deploymentStatus = "PENDING";
+
 
       if (
         workflowRun.status === "queued" ||
@@ -323,6 +355,7 @@ router.post(
         deploymentStatus = "RUNNING";
       }
 
+
       if (
         workflowRun.status === "completed" &&
         workflowRun.conclusion === "success"
@@ -330,12 +363,14 @@ router.post(
         deploymentStatus = "SUCCESS";
       }
 
+
       if (
         workflowRun.status === "completed" &&
         workflowRun.conclusion !== "success"
       ) {
         deploymentStatus = "FAILED";
       }
+
 
       // -----------------------------------------------
       // Update deployment
@@ -358,11 +393,13 @@ router.post(
           }
         });
 
+
       // -----------------------------------------------
       // Response
       // -----------------------------------------------
 
       return res.json({
+
         message:
           "Deployment synced with GitHub Actions",
 
@@ -371,9 +408,11 @@ router.post(
 
         githubActions:
           workflowRun
+
       });
 
     } catch (error) {
+
       console.error(error);
 
       return res.status(500).json({
@@ -394,10 +433,12 @@ router.patch(
   authenticateToken,
   async (req: AuthRequest, res) => {
     try {
+
       const deploymentId =
         Number(req.params.deploymentId);
 
       const { status } = req.body;
+
 
       // -----------------------------------------------
       // Allowed statuses
@@ -410,6 +451,7 @@ router.patch(
         "FAILED"
       ];
 
+
       if (
         !allowedStatuses.includes(status)
       ) {
@@ -418,6 +460,7 @@ router.patch(
             "Invalid deployment status"
         });
       }
+
 
       // -----------------------------------------------
       // Find deployment
@@ -433,12 +476,14 @@ router.patch(
           }
         });
 
+
       if (!deployment) {
         return res.status(404).json({
           message:
             "Deployment not found"
         });
       }
+
 
       // -----------------------------------------------
       // Check ownership
@@ -454,6 +499,7 @@ router.patch(
         });
       }
 
+
       // -----------------------------------------------
       // Update status
       // -----------------------------------------------
@@ -468,6 +514,7 @@ router.patch(
           }
         });
 
+
       return res.json({
         message:
           "Deployment status updated",
@@ -477,6 +524,7 @@ router.patch(
       });
 
     } catch (error) {
+
       console.error(error);
 
       return res.status(500).json({

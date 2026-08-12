@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import "./App.css";
 
 interface Project {
   id: number;
@@ -12,14 +13,16 @@ interface Deployment {
   id: number;
   repositoryUrl: string;
   branch: string;
-  commitSha: string | null;
-  commitMessage: string | null;
-  workflowRunId: string | null;
-  workflowUrl: string | null;
   status: string;
   createdAt: string;
   projectId: number;
+  commitSha?: string;
+  commitMessage?: string;
+  workflowRunId?: string;
+  workflowUrl?: string;
 }
+
+const API_BASE_URL = "http://localhost:5001";
 
 function App() {
   const [email, setEmail] = useState("");
@@ -41,36 +44,46 @@ function App() {
   const [selectedProject, setSelectedProject] =
     useState<Project | null>(null);
 
-  const [deployments, setDeployments] =
-    useState<Deployment[]>([]);
+  const [deployments, setDeployments] = useState<Deployment[]>([]);
+  const [loadingDeployments, setLoadingDeployments] = useState(false);
 
-  const [loadingDeployments, setLoadingDeployments] =
-    useState(false);
-
-  const [showDeploymentForm, setShowDeploymentForm] =
-    useState(false);
+  const [showDeploymentForm, setShowDeploymentForm] = useState(false);
 
   const [repositoryUrl, setRepositoryUrl] = useState("");
   const [branch, setBranch] = useState("main");
-  const [deploymentMessage, setDeploymentMessage] =
-    useState("");
+  // Step 1: default workflow file changed from "deploy.yml" to "deployflow.yml"
+  const [workflow, setWorkflow] = useState("deployflow.yml");
+  const [deploymentMessage, setDeploymentMessage] = useState("");
 
-  // LOGIN
+  const [activePage, setActivePage] = useState("Dashboard");
+
+  const successfulDeployments = useMemo(
+    () => deployments.filter((d) => d.status === "SUCCESS").length,
+    [deployments]
+  );
+
+  const failedDeployments = useMemo(
+    () => deployments.filter((d) => d.status === "FAILED").length,
+    [deployments]
+  );
+
+  // ---------------- LOGIN ----------------
+
   const handleLogin = async () => {
     try {
       setMessage("Logging in...");
 
       const response = await fetch(
-        "http://localhost:5001/api/auth/login",
+        `${API_BASE_URL}/api/auth/login`,
         {
           method: "POST",
           headers: {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
           },
           body: JSON.stringify({
             email,
-            password
-          })
+            password,
+          }),
         }
       );
 
@@ -91,7 +104,8 @@ function App() {
     }
   };
 
-  // GET PROJECTS
+  // ---------------- PROJECTS ----------------
+
   const fetchProjects = async () => {
     try {
       setLoadingProjects(true);
@@ -99,11 +113,11 @@ function App() {
       const token = localStorage.getItem("token");
 
       const response = await fetch(
-        "http://localhost:5001/api/projects",
+        `${API_BASE_URL}/api/projects`,
         {
           headers: {
-            Authorization: `Bearer ${token}`
-          }
+            Authorization: `Bearer ${token}`,
+          },
         }
       );
 
@@ -128,7 +142,8 @@ function App() {
     }
   }, [loggedIn]);
 
-  // CREATE PROJECT
+  // ---------------- CREATE PROJECT ----------------
+
   const handleCreateProject = async () => {
     try {
       setCreateMessage("");
@@ -141,17 +156,17 @@ function App() {
       const token = localStorage.getItem("token");
 
       const response = await fetch(
-        "http://localhost:5001/api/projects",
+        `${API_BASE_URL}/api/projects`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             name: projectName,
-            description: projectDescription
-          })
+            description: projectDescription,
+          }),
         }
       );
 
@@ -181,7 +196,8 @@ function App() {
     }
   };
 
-  // VIEW DEPLOYMENTS
+  // ---------------- DEPLOYMENTS ----------------
+
   const handleViewDeployments = async (
     project: Project
   ) => {
@@ -193,11 +209,11 @@ function App() {
       const token = localStorage.getItem("token");
 
       const response = await fetch(
-        `http://localhost:5001/api/deployments/project/${project.id}`,
+        `${API_BASE_URL}/api/deployments/project/${project.id}`,
         {
           headers: {
-            Authorization: `Bearer ${token}`
-          }
+            Authorization: `Bearer ${token}`,
+          },
         }
       );
 
@@ -216,7 +232,6 @@ function App() {
     }
   };
 
-  // CREATE DEPLOYMENT
   const handleCreateDeployment = async () => {
     try {
       setDeploymentMessage("");
@@ -236,18 +251,20 @@ function App() {
       const token = localStorage.getItem("token");
 
       const response = await fetch(
-        "http://localhost:5001/api/deployments",
+        `${API_BASE_URL}/api/deployments`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`
+            Authorization: `Bearer ${token}`,
           },
+          // Step 3: request now sends the workflow field too
           body: JSON.stringify({
             projectId: selectedProject.id,
             repositoryUrl,
-            branch: branch || "main"
-          })
+            branch: branch || "main",
+            workflow: workflow || "deployflow.yml",
+          }),
         }
       );
 
@@ -267,6 +284,7 @@ function App() {
 
       setRepositoryUrl("");
       setBranch("main");
+      setWorkflow("deployflow.yml");
 
       await handleViewDeployments(selectedProject);
 
@@ -283,39 +301,8 @@ function App() {
     }
   };
 
-  // SYNC DEPLOYMENT WITH GITHUB ACTIONS
-  const handleSyncDeployment = async (
-    deploymentId: number
-  ) => {
-    try {
-      const token = localStorage.getItem("token");
+  // ---------------- LOGOUT ----------------
 
-      const response = await fetch(
-        `http://localhost:5001/api/deployments/${deploymentId}/sync`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        console.error(data);
-        return;
-      }
-
-      if (selectedProject) {
-        await handleViewDeployments(selectedProject);
-      }
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  // LOGOUT
   const handleLogout = () => {
     localStorage.removeItem("token");
 
@@ -325,119 +312,662 @@ function App() {
     setDeployments([]);
   };
 
-  const getStatusClass = (status: string) => {
-    return `status status-${status.toLowerCase()}`;
-  };
+  // ---------------- LOGIN SCREEN ----------------
 
-  // DASHBOARD
-  if (loggedIn) {
+  if (!loggedIn) {
     return (
-      <div className="app">
-        <header className="topbar">
+      <div className="auth-page">
+        <div className="auth-glow glow-one" />
+        <div className="auth-glow glow-two" />
+
+        <div className="auth-container">
+          <div className="auth-brand">
+            <div className="brand-mark">
+              DF
+            </div>
+
+            <span>DeployFlow</span>
+          </div>
+
+          <div className="auth-card">
+            <div className="auth-heading">
+              <span className="eyebrow">
+                DEPLOYMENT PLATFORM
+              </span>
+
+              <h1>Welcome back</h1>
+
+              <p>
+                Manage projects, deployments and
+                GitHub Actions from one place.
+              </p>
+            </div>
+
+            <div className="form-group">
+              <label>Email</label>
+
+              <input
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) =>
+                  setEmail(e.target.value)
+                }
+              />
+            </div>
+
+            <div className="form-group">
+              <div className="label-row">
+                <label>Password</label>
+              </div>
+
+              <input
+                type="password"
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e) =>
+                  setPassword(e.target.value)
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleLogin();
+                  }
+                }}
+              />
+            </div>
+
+            <button
+              className="primary-button full-width"
+              onClick={handleLogin}
+            >
+              Sign in
+              <span>→</span>
+            </button>
+
+            {message && (
+              <div className="error-message">
+                {message}
+              </div>
+            )}
+
+            <div className="auth-footer">
+              <span className="status-dot" />
+              DeployFlow services ready
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---------------- DASHBOARD ----------------
+
+  return (
+    <div className="app-shell">
+
+      {/* SIDEBAR */}
+
+      <aside className="sidebar">
+
+        <div className="sidebar-brand">
+          <div className="brand-mark">
+            DF
+          </div>
+
           <div>
-            <h1>DeployFlow</h1>
-            <span className="subtitle">
-              Deployment Management Platform
+            <strong>DeployFlow</strong>
+            <span>DevOps Platform</span>
+          </div>
+        </div>
+
+        <nav className="sidebar-nav">
+
+          <button
+            className={
+              activePage === "Dashboard"
+                ? "nav-item active"
+                : "nav-item"
+            }
+            onClick={() => setActivePage("Dashboard")}
+          >
+            <span className="nav-icon">⌂</span>
+            Dashboard
+          </button>
+
+          <button
+            className={
+              activePage === "Projects"
+                ? "nav-item active"
+                : "nav-item"
+            }
+            onClick={() => setActivePage("Projects")}
+          >
+            <span className="nav-icon">▣</span>
+            Projects
+          </button>
+
+          <button
+            className={
+              activePage === "Deployments"
+                ? "nav-item active"
+                : "nav-item"
+            }
+            onClick={() =>
+              setActivePage("Deployments")
+            }
+          >
+            <span className="nav-icon">⇧</span>
+            Deployments
+          </button>
+        </nav>
+
+        <div className="sidebar-bottom">
+
+          <div className="system-card">
+            <div className="system-header">
+              <span className="status-dot" />
+              System status
+            </div>
+
+            <strong>All systems operational</strong>
+
+            <span>
+              Backend · Database · GitHub
             </span>
           </div>
 
           <button
-            className="button secondary"
+            className="logout-button"
             onClick={handleLogout}
           >
+            <span>↪</span>
             Logout
           </button>
-        </header>
+        </div>
+      </aside>
 
-        <main className="dashboard">
-          <div className="dashboard-heading">
-            <div>
-              <h2>Dashboard</h2>
-              <p>
-                Manage projects and track deployments.
-              </p>
+      {/* MAIN */}
+
+      <main className="main-content">
+
+        <header className="topbar">
+
+          <div>
+            <span className="breadcrumb">
+              Workspace / {activePage}
+            </span>
+
+            <h1>
+              {activePage}
+            </h1>
+          </div>
+
+          <div className="topbar-actions">
+
+            <div className="online-badge">
+              <span className="status-dot" />
+              Online
             </div>
 
             <button
-              className="button primary"
+              className="primary-button"
               onClick={() =>
                 setShowCreateForm(true)
               }
             >
-              + Create Project
+              + New Project
             </button>
           </div>
+        </header>
 
-          {/* PROJECTS */}
-          <section className="panel">
-            <div className="panel-heading">
-              <h3>Projects</h3>
-              <span className="count">
-                {projects.length}
-              </span>
+        {/* DASHBOARD */}
+
+        {activePage === "Dashboard" && (
+          <>
+            <section className="hero-section">
+
+              <div>
+                <span className="eyebrow">
+                  DEPLOYMENT OVERVIEW
+                </span>
+
+                <h2>
+                  Ship with confidence.
+                </h2>
+
+                <p>
+                  Monitor your projects and track
+                  GitHub Actions deployments from a
+                  single dashboard.
+                </p>
+              </div>
+
+              <div className="hero-decoration">
+                <div className="pipeline-line">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+
+                <div className="pipeline-label">
+                  GitHub → Actions → Deploy
+                </div>
+              </div>
+            </section>
+
+            <section className="stats-grid">
+
+              <div className="stat-card">
+                <div className="stat-icon purple">
+                  ▣
+                </div>
+
+                <div>
+                  <span>Total projects</span>
+                  <strong>{projects.length}</strong>
+                </div>
+              </div>
+
+              <div className="stat-card">
+                <div className="stat-icon blue">
+                  ⇧
+                </div>
+
+                <div>
+                  <span>Deployments</span>
+                  <strong>{deployments.length}</strong>
+                </div>
+              </div>
+
+              <div className="stat-card">
+                <div className="stat-icon green">
+                  ✓
+                </div>
+
+                <div>
+                  <span>Successful</span>
+                  <strong>
+                    {successfulDeployments}
+                  </strong>
+                </div>
+              </div>
+
+              <div className="stat-card">
+                <div className="stat-icon red">
+                  !
+                </div>
+
+                <div>
+                  <span>Failed</span>
+                  <strong>
+                    {failedDeployments}
+                  </strong>
+                </div>
+              </div>
+
+            </section>
+          </>
+        )}
+
+        {/* PROJECTS */}
+
+        {(activePage === "Dashboard" ||
+          activePage === "Projects") && (
+          <section className="content-section">
+
+            <div className="section-heading">
+
+              <div>
+                <span className="eyebrow">
+                  WORKSPACES
+                </span>
+
+                <h2>Your projects</h2>
+
+                <p>
+                  Manage applications and their
+                  deployment pipelines.
+                </p>
+              </div>
+
+              <button
+                className="secondary-button"
+                onClick={() =>
+                  setShowCreateForm(true)
+                }
+              >
+                + Create Project
+              </button>
+
             </div>
 
-            {loadingProjects && (
-              <p className="muted">
+            {loadingProjects ? (
+              <div className="empty-card">
+                <div className="spinner" />
                 Loading projects...
-              </p>
-            )}
+              </div>
+            ) : projects.length === 0 ? (
+              <div className="empty-card">
+                <div className="empty-icon">
+                  ▣
+                </div>
 
-            {!loadingProjects &&
-              projects.length === 0 && (
-                <p className="muted">
-                  No projects found.
+                <h3>
+                  No projects yet
+                </h3>
+
+                <p>
+                  Create your first project to start
+                  tracking deployments.
                 </p>
-              )}
 
-            <div className="project-grid">
-              {projects.map((project) => (
-                <div
-                  className="project-card"
-                  key={project.id}
+                <button
+                  className="primary-button"
+                  onClick={() =>
+                    setShowCreateForm(true)
+                  }
                 >
-                  <div>
-                    <h4>{project.name}</h4>
+                  Create your first project
+                </button>
+              </div>
+            ) : (
+              <div className="project-grid">
 
-                    <p>
+                {projects.map((project) => (
+                  <div
+                    className="project-card"
+                    key={project.id}
+                  >
+
+                    <div className="project-card-top">
+
+                      <div className="project-avatar">
+                        {project.name
+                          .slice(0, 2)
+                          .toUpperCase()}
+                      </div>
+
+                      <span className="project-status">
+                        Active
+                      </span>
+
+                    </div>
+
+                    <h3>
+                      {project.name}
+                    </h3>
+
+                    <p className="project-description">
                       {project.description ||
                         "No description provided."}
                     </p>
 
-                    <span className="project-id">
-                      Project #{project.id}
-                    </span>
+                    <div className="project-meta">
+                      <span>
+                        ID #{project.id}
+                      </span>
+
+                      <span>
+                        {new Date(
+                          project.createdAt
+                        ).toLocaleDateString()}
+                      </span>
+                    </div>
+
+                    <button
+                      className="project-button"
+                      onClick={() =>
+                        handleViewDeployments(
+                          project
+                        )
+                      }
+                    >
+                      View deployments
+                      <span>→</span>
+                    </button>
+
                   </div>
+                ))}
+
+              </div>
+            )}
+
+          </section>
+        )}
+
+        {/* DEPLOYMENTS */}
+
+        {(activePage === "Dashboard" ||
+          activePage === "Deployments") &&
+          selectedProject && (
+            <section className="content-section">
+
+              <div className="section-heading">
+
+                <div>
+                  <span className="eyebrow">
+                    DEPLOYMENT HISTORY
+                  </span>
+
+                  <h2>
+                    {selectedProject.name}
+                  </h2>
+
+                  <p>
+                    GitHub Actions deployment
+                    activity.
+                  </p>
+                </div>
+
+                <div className="heading-actions">
 
                   <button
-                    className="button secondary"
+                    className="secondary-button"
                     onClick={() =>
-                      handleViewDeployments(project)
+                      handleViewDeployments(
+                        selectedProject
+                      )
                     }
                   >
-                    View Deployments
+                    Refresh
+                  </button>
+
+                  <button
+                    className="primary-button"
+                    onClick={() =>
+                      setShowDeploymentForm(true)
+                    }
+                  >
+                    + Deploy
+                  </button>
+
+                </div>
+
+              </div>
+
+              {loadingDeployments ? (
+                <div className="empty-card">
+                  <div className="spinner" />
+                  Loading deployments...
+                </div>
+              ) : deployments.length === 0 ? (
+                <div className="empty-card compact">
+                  <div className="empty-icon">
+                    ⇧
+                  </div>
+
+                  <h3>
+                    No deployments yet
+                  </h3>
+
+                  <p>
+                    Create your first deployment
+                    for this project.
+                  </p>
+
+                  <button
+                    className="primary-button"
+                    onClick={() =>
+                      setShowDeploymentForm(true)
+                    }
+                  >
+                    Create deployment
                   </button>
                 </div>
-              ))}
-            </div>
-          </section>
+              ) : (
+                <div className="deployment-list">
 
-          {/* CREATE PROJECT */}
-          {showCreateForm && (
-            <section className="panel form-panel">
-              <h3>Create New Project</h3>
+                  {deployments.map(
+                    (deployment) => (
+                      <div
+                        className="deployment-card"
+                        key={deployment.id}
+                      >
+
+                        <div className="deployment-main">
+
+                          <div className="deployment-icon">
+                            ⇧
+                          </div>
+
+                          <div className="deployment-info">
+
+                            <div className="deployment-title">
+
+                              <strong>
+                                Deployment #
+                                {deployment.id}
+                              </strong>
+
+                              <StatusBadge
+                                status={
+                                  deployment.status
+                                }
+                              />
+
+                            </div>
+
+                            <div className="deployment-repo">
+                              {deployment.repositoryUrl}
+                            </div>
+
+                            <div className="deployment-meta">
+
+                              <span>
+                                ◇{" "}
+                                {deployment.branch}
+                              </span>
+
+                              <span>
+                                {new Date(
+                                  deployment.createdAt
+                                ).toLocaleString()}
+                              </span>
+
+                              {deployment.commitSha && (
+                                <span>
+                                  #
+                                  {deployment.commitSha.slice(
+                                    0,
+                                    7
+                                  )}
+                                </span>
+                              )}
+
+                            </div>
+
+                            {deployment.commitMessage && (
+                              <div className="commit-message">
+                                {deployment.commitMessage}
+                              </div>
+                            )}
+
+                          </div>
+
+                        </div>
+
+                        {deployment.workflowUrl && (
+                          <a
+                            className="github-link"
+                            href={
+                              deployment.workflowUrl
+                            }
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            GitHub Actions ↗
+                          </a>
+                        )}
+
+                      </div>
+                    )
+                  )}
+
+                </div>
+              )}
+
+            </section>
+          )}
+
+      </main>
+
+      {/* CREATE PROJECT MODAL */}
+
+      {showCreateForm && (
+        <div
+          className="modal-overlay"
+          onClick={() =>
+            setShowCreateForm(false)
+          }
+        >
+          <div
+            className="modal"
+            onClick={(e) =>
+              e.stopPropagation()
+            }
+          >
+
+            <div className="modal-header">
+
+              <div>
+                <span className="eyebrow">
+                  NEW PROJECT
+                </span>
+
+                <h2>
+                  Create project
+                </h2>
+              </div>
+
+              <button
+                className="close-button"
+                onClick={() =>
+                  setShowCreateForm(false)
+                }
+              >
+                ×
+              </button>
+
+            </div>
+
+            <div className="form-group">
+              <label>Project name</label>
 
               <input
                 type="text"
-                placeholder="Project name"
+                placeholder="My awesome project"
                 value={projectName}
                 onChange={(e) =>
                   setProjectName(e.target.value)
                 }
               />
+            </div>
+
+            <div className="form-group">
+              <label>Description</label>
 
               <textarea
-                placeholder="Project description"
+                placeholder="What are you deploying?"
                 value={projectDescription}
                 onChange={(e) =>
                   setProjectDescription(
@@ -445,305 +975,202 @@ function App() {
                   )
                 }
               />
+            </div>
 
-              <div className="form-actions">
+            {createMessage && (
+              <div className="success-message">
+                {createMessage}
+              </div>
+            )}
+
+            <div className="modal-actions">
+
+              <button
+                className="secondary-button"
+                onClick={() =>
+                  setShowCreateForm(false)
+                }
+              >
+                Cancel
+              </button>
+
+              <button
+                className="primary-button"
+                onClick={handleCreateProject}
+              >
+                Create project
+              </button>
+
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* CREATE DEPLOYMENT MODAL */}
+
+      {showDeploymentForm &&
+        selectedProject && (
+          <div
+            className="modal-overlay"
+            onClick={() =>
+              setShowDeploymentForm(false)
+            }
+          >
+            <div
+              className="modal"
+              onClick={(e) =>
+                e.stopPropagation()
+              }
+            >
+
+              <div className="modal-header">
+
+                <div>
+                  <span className="eyebrow">
+                    NEW DEPLOYMENT
+                  </span>
+
+                  <h2>
+                    Deploy {selectedProject.name}
+                  </h2>
+                </div>
+
                 <button
-                  className="button primary"
-                  onClick={handleCreateProject}
+                  className="close-button"
+                  onClick={() =>
+                    setShowDeploymentForm(false)
+                  }
                 >
-                  Create Project
+                  ×
                 </button>
 
+              </div>
+
+              <div className="form-group">
+
+                <label>
+                  GitHub repository
+                </label>
+
+                <input
+                  type="text"
+                  placeholder="https://github.com/user/repository"
+                  value={repositoryUrl}
+                  onChange={(e) =>
+                    setRepositoryUrl(
+                      e.target.value
+                    )
+                  }
+                />
+
+              </div>
+
+              <div className="form-group">
+
+                <label>
+                  Branch
+                </label>
+
+                <input
+                  type="text"
+                  placeholder="main"
+                  value={branch}
+                  onChange={(e) =>
+                    setBranch(e.target.value)
+                  }
+                />
+
+              </div>
+
+              {/* Step 2: Workflow input, added after Branch */}
+              <div className="form-group">
+                <label>
+                  GitHub Actions workflow
+                </label>
+
+                <input
+                  type="text"
+                  placeholder="deployflow.yml"
+                  value={workflow}
+                  onChange={(e) => setWorkflow(e.target.value)}
+                />
+
+                <small>
+                  Workflow file inside .github/workflows/
+                </small>
+              </div>
+
+              <div className="deploy-info">
+                <span>Deployment pipeline</span>
+
+                <div className="pipeline">
+                  <span>GitHub</span>
+                  <b>→</b>
+                  <span>Actions</span>
+                  <b>→</b>
+                  <span>Deploy</span>
+                </div>
+              </div>
+
+              {deploymentMessage && (
+                <div
+                  className={
+                    deploymentMessage.includes(
+                      "successfully"
+                    )
+                      ? "success-message"
+                      : "error-message"
+                  }
+                >
+                  {deploymentMessage}
+                </div>
+              )}
+
+              <div className="modal-actions">
+
                 <button
-                  className="button secondary"
+                  className="secondary-button"
                   onClick={() =>
-                    setShowCreateForm(false)
+                    setShowDeploymentForm(false)
                   }
                 >
                   Cancel
                 </button>
+
+                <button
+                  className="primary-button"
+                  onClick={
+                    handleCreateDeployment
+                  }
+                >
+                  Start deployment
+                  <span>→</span>
+                </button>
+
               </div>
 
-              {createMessage && (
-                <p className="form-message">
-                  {createMessage}
-                </p>
-              )}
-            </section>
-          )}
-
-          {/* DEPLOYMENTS */}
-          {selectedProject && (
-            <section className="panel deployments-panel">
-              <div className="panel-heading">
-                <div>
-                  <h3>
-                    Deployments for{" "}
-                    {selectedProject.name}
-                  </h3>
-
-                  <p className="muted">
-                    Track GitHub commits and Actions.
-                  </p>
-                </div>
-
-                <div className="heading-actions">
-                  <button
-                    className="button primary"
-                    onClick={() =>
-                      setShowDeploymentForm(true)
-                    }
-                  >
-                    + Create Deployment
-                  </button>
-
-                  <button
-                    className="button secondary"
-                    onClick={() => {
-                      setSelectedProject(null);
-                      setDeployments([]);
-                      setShowDeploymentForm(false);
-                    }}
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-
-              {/* CREATE DEPLOYMENT FORM */}
-              {showDeploymentForm && (
-                <div className="deployment-form">
-                  <h4>Create New Deployment</h4>
-
-                  <input
-                    type="text"
-                    placeholder="GitHub repository URL"
-                    value={repositoryUrl}
-                    onChange={(e) =>
-                      setRepositoryUrl(e.target.value)
-                    }
-                  />
-
-                  <input
-                    type="text"
-                    placeholder="Branch"
-                    value={branch}
-                    onChange={(e) =>
-                      setBranch(e.target.value)
-                    }
-                  />
-
-                  <div className="form-actions">
-                    <button
-                      className="button primary"
-                      onClick={
-                        handleCreateDeployment
-                      }
-                    >
-                      Create Deployment
-                    </button>
-
-                    <button
-                      className="button secondary"
-                      onClick={() =>
-                        setShowDeploymentForm(false)
-                      }
-                    >
-                      Cancel
-                    </button>
-                  </div>
-
-                  {deploymentMessage && (
-                    <p className="form-message">
-                      {deploymentMessage}
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {loadingDeployments && (
-                <p className="muted">
-                  Loading deployments...
-                </p>
-              )}
-
-              {!loadingDeployments &&
-                deployments.length === 0 && (
-                  <p className="muted">
-                    No deployments found.
-                  </p>
-                )}
-
-              {/* DEPLOYMENT CARDS */}
-              <div className="deployment-list">
-                {deployments.map((deployment) => (
-                  <div
-                    className="deployment-card"
-                    key={deployment.id}
-                  >
-                    <div className="deployment-header">
-                      <div>
-                        <h4>
-                          Deployment #{deployment.id}
-                        </h4>
-
-                        <p className="deployment-date">
-                          {new Date(
-                            deployment.createdAt
-                          ).toLocaleString()}
-                        </p>
-                      </div>
-
-                      <span
-                        className={getStatusClass(
-                          deployment.status
-                        )}
-                      >
-                        {deployment.status}
-                      </span>
-                    </div>
-
-                    <div className="deployment-details">
-                      <div>
-                        <span className="detail-label">
-                          Repository
-                        </span>
-
-                        <a
-                          href={deployment.repositoryUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          {deployment.repositoryUrl}
-                        </a>
-                      </div>
-
-                      <div>
-                        <span className="detail-label">
-                          Branch
-                        </span>
-
-                        <code>
-                          {deployment.branch}
-                        </code>
-                      </div>
-
-                      {deployment.commitSha && (
-                        <div>
-                          <span className="detail-label">
-                            Commit
-                          </span>
-
-                          <code>
-                            {deployment.commitSha.slice(
-                              0,
-                              7
-                            )}
-                          </code>
-
-                          {deployment.commitMessage && (
-                            <span className="commit-message">
-                              {deployment.commitMessage}
-                            </span>
-                          )}
-                        </div>
-                      )}
-
-                      {deployment.workflowRunId && (
-                        <div>
-                          <span className="detail-label">
-                            GitHub Actions
-                          </span>
-
-                          <span>
-                            Run #
-                            {deployment.workflowRunId}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="deployment-actions">
-                      {deployment.workflowUrl && (
-                        <a
-                          className="button secondary"
-                          href={deployment.workflowUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          View GitHub Actions
-                        </a>
-                      )}
-
-                      {deployment.commitSha &&
-                        deployment.status !==
-                          "SUCCESS" && (
-                          <button
-                            className="button secondary"
-                            onClick={() =>
-                              handleSyncDeployment(
-                                deployment.id
-                              )
-                            }
-                          >
-                            Sync Status
-                          </button>
-                        )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-        </main>
-      </div>
-    );
-  }
-
-  // LOGIN PAGE
-  return (
-    <div className="login-page">
-      <div className="login-card">
-        <div className="brand">
-          <h1>DeployFlow</h1>
-
-          <p>
-            Simple deployment management platform
-          </p>
-        </div>
-
-        <h2>Welcome back</h2>
-
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) =>
-            setEmail(e.target.value)
-          }
-        />
-
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) =>
-            setPassword(e.target.value)
-          }
-        />
-
-        <button
-          className="button primary login-button"
-          onClick={handleLogin}
-        >
-          Login
-        </button>
-
-        {message && (
-          <p className="form-message">{message}</p>
+            </div>
+          </div>
         )}
-      </div>
     </div>
+  );
+}
+
+function StatusBadge({
+  status,
+}: {
+  status: string;
+}) {
+  const normalized = status.toLowerCase();
+
+  return (
+    <span
+      className={`status-badge ${normalized}`}
+    >
+      <span className="status-dot" />
+      {status}
+    </span>
   );
 }
 
