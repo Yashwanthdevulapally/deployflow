@@ -4,7 +4,9 @@ export async function getRepository(
 ) {
   const { Octokit } = await import("octokit");
 
-  const octokit = new Octokit();
+  const octokit = new Octokit({
+    auth: process.env.GITHUB_TOKEN
+  });
 
   const response = await octokit.rest.repos.get({
     owner,
@@ -27,7 +29,9 @@ export async function getLatestCommit(
 ) {
   const { Octokit } = await import("octokit");
 
-  const octokit = new Octokit();
+  const octokit = new Octokit({
+    auth: process.env.GITHUB_TOKEN
+  });
 
   const response = await octokit.rest.repos.getCommit({
     owner,
@@ -51,7 +55,9 @@ export async function getLatestWorkflowRun(
 ) {
   const { Octokit } = await import("octokit");
 
-  const octokit = new Octokit();
+  const octokit = new Octokit({
+    auth: process.env.GITHUB_TOKEN
+  });
 
   const response =
     await octokit.rest.actions.listWorkflowRunsForRepo({
@@ -78,6 +84,7 @@ export async function getLatestWorkflowRun(
     updatedAt: run.updated_at
   };
 }
+
 export async function getWorkflowRunForCommit(
   owner: string,
   repo: string,
@@ -86,7 +93,9 @@ export async function getWorkflowRunForCommit(
 ) {
   const { Octokit } = await import("octokit");
 
-  const octokit = new Octokit();
+  const octokit = new Octokit({
+    auth: process.env.GITHUB_TOKEN
+  });
 
   const response =
     await octokit.rest.actions.listWorkflowRunsForRepo({
@@ -114,6 +123,7 @@ export async function getWorkflowRunForCommit(
     updatedAt: run.updated_at
   };
 }
+
 export async function getWorkflows(
   owner: string,
   repo: string
@@ -138,24 +148,49 @@ export async function getWorkflows(
     htmlUrl: workflow.html_url
   }));
 }
+
+/**
+ * Trigger a GitHub Actions workflow.
+ *
+ * ref:
+ *   Branch or tag from which GitHub should load the workflow.
+ *
+ * commitSha:
+ *   Optional commit that the workflow should actually deploy.
+ *
+ * For normal deployment:
+ *   triggerWorkflow(owner, repo, workflow, "main")
+ *
+ * For rollback:
+ *   triggerWorkflow(owner, repo, workflow, "main", oldCommitSha)
+ */
 export async function triggerWorkflow(
   owner: string,
   repo: string,
   workflowFile: string,
-  branch: string
+  ref: string,
+  commitSha?: string
 ) {
   const { Octokit } = await import("octokit");
 
   const octokit = new Octokit({
-  auth: process.env.GITHUB_TOKEN
-});
+    auth: process.env.GITHUB_TOKEN
+  });
 
   const response =
     await octokit.rest.actions.createWorkflowDispatch({
       owner,
       repo,
       workflow_id: workflowFile,
-      ref: branch
+      ref,
+
+      ...(commitSha
+        ? {
+            inputs: {
+              commit_sha: commitSha
+            }
+          }
+        : {})
     });
 
   return {

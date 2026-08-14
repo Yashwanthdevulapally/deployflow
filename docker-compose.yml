@@ -1,4 +1,5 @@
 services:
+
   postgres:
     image: postgres:16
     container_name: deployflow-postgres
@@ -15,6 +16,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+
   backend:
     build:
       context: ./backend
@@ -22,6 +24,9 @@ services:
 
     container_name: deployflow-backend
     restart: always
+
+    env_file:
+      - ./backend/.env
 
     environment:
       DATABASE_URL: "postgresql://deployflow:deployflow123@postgres:5432/deployflow_db"
@@ -32,6 +37,7 @@ services:
 
     depends_on:
       - postgres
+
 
   frontend:
     build:
@@ -46,6 +52,7 @@ services:
 
     depends_on:
       - backend
+
 
 volumes:
   postgres_data:

@@ -739,5 +739,237 @@ router.get(
   }
 );
 
+// =====================================================
+// ROLLBACK DEPLOYMENT
+// =====================================================
+// =====================================================
+// ROLLBACK DEPLOYMENT
+// =====================================================
+// =====================================================
+// ROLLBACK DEPLOYMENT
+// =====================================================
 
+router.post(
+  "/:deploymentId/rollback",
+  authenticateToken,
+  async (req: AuthRequest, res) => {
+    try {
+      const deploymentId = Number(req.params.deploymentId);
+
+      if (!deploymentId || Number.isNaN(deploymentId)) {
+        return res.status(400).json({
+          message: "Invalid deployment ID"
+        });
+      }
+
+      // -------------------------------------------------
+      // Find deployment being rolled back
+      // -------------------------------------------------
+
+      const deployment =
+        await prisma.deployment.findUnique({
+          where: {
+            id: deploymentId
+          },
+          include: {
+            project: true
+          }
+        });
+
+      if (!deployment) {
+        return res.status(404).json({
+          message: "Deployment not found"
+        });
+      }
+
+      // -------------------------------------------------
+      // Check ownership
+      // -------------------------------------------------
+
+      if (
+        deployment.project.userId !==
+        req.user!.userId
+      ) {
+        return res.status(403).json({
+          message:
+            "You are not allowed to rollback this deployment"
+        });
+      }
+
+      // -------------------------------------------------
+      // Find previous successful deployment
+      // -------------------------------------------------
+
+      const previousSuccessfulDeployment =
+        await prisma.deployment.findFirst({
+          where: {
+            projectId: deployment.projectId,
+
+            repositoryUrl:
+              deployment.repositoryUrl,
+
+            status: "SUCCESS",
+
+            id: {
+              lt: deployment.id
+            }
+          },
+
+          orderBy: {
+            id: "desc"
+          }
+        });
+
+      if (!previousSuccessfulDeployment) {
+        return res.status(400).json({
+          message:
+            "No previous successful deployment found"
+        });
+      }
+
+      // -------------------------------------------------
+      // Make sure previous deployment has commit SHA
+      // -------------------------------------------------
+
+      if (!previousSuccessfulDeployment.commitSha) {
+        return res.status(400).json({
+          message:
+            "Previous successful deployment has no commit SHA"
+        });
+      }
+
+      // -------------------------------------------------
+      // Extract GitHub repository
+      // -------------------------------------------------
+
+      const githubPath =
+        previousSuccessfulDeployment.repositoryUrl
+          .replace("https://github.com/", "")
+          .replace(/\.git$/, "")
+          .replace(/\/$/, "");
+
+      const [owner, repo] =
+        githubPath.split("/");
+
+      if (!owner || !repo) {
+        return res.status(400).json({
+          message:
+            "Invalid GitHub repository URL"
+        });
+      }
+
+      // -------------------------------------------------
+      // Create rollback deployment
+      // -------------------------------------------------
+
+      const rollbackDeployment =
+        await prisma.deployment.create({
+          data: {
+            projectId:
+              deployment.projectId,
+
+            repositoryUrl:
+              previousSuccessfulDeployment.repositoryUrl,
+
+            branch:
+              previousSuccessfulDeployment.branch,
+
+            workflow:
+              previousSuccessfulDeployment.workflow,
+
+            commitSha:
+              previousSuccessfulDeployment.commitSha,
+
+            commitMessage:
+              previousSuccessfulDeployment.commitMessage,
+
+            status:
+              "PENDING",
+
+            rollbackOfId:
+              deployment.id
+          }
+        });
+
+      // -------------------------------------------------
+      // Trigger GitHub Actions
+      // -------------------------------------------------
+
+      try {
+        await triggerWorkflow(
+          owner,
+
+          repo,
+
+          // Workflow file
+          "deployflow.yml",
+
+          // IMPORTANT:
+          // ref must be a branch/tag
+          previousSuccessfulDeployment.branch,
+
+          // Old commit to actually deploy
+          previousSuccessfulDeployment.commitSha
+        );
+
+        console.log(
+          `Rollback triggered for deployment #${rollbackDeployment.id}`
+        );
+
+      } catch (githubError) {
+
+        console.error(
+          "Failed to trigger rollback:",
+          githubError
+        );
+
+        const failedRollback =
+          await prisma.deployment.update({
+            where: {
+              id: rollbackDeployment.id
+            },
+
+            data: {
+              status: "FAILED"
+            }
+          });
+
+        return res.status(500).json({
+          message:
+            "Rollback created but GitHub Actions could not be triggered",
+
+          deployment:
+            failedRollback
+        });
+      }
+
+      // -------------------------------------------------
+      // Response
+      // -------------------------------------------------
+
+      return res.status(201).json({
+        message:
+          "Rollback deployment created and GitHub Actions triggered",
+
+        deployment:
+          rollbackDeployment,
+
+        rolledBackTo:
+          previousSuccessfulDeployment.id
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Rollback failed:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to rollback deployment"
+      });
+    }
+  }
+);
 export default router;
