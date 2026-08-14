@@ -895,53 +895,81 @@ router.post(
       // Trigger GitHub Actions
       // -------------------------------------------------
 
-      try {
-        await triggerWorkflow(
-          owner,
+      // -------------------------------------------------
+// Trigger GitHub Actions
+// -------------------------------------------------
 
-          repo,
+try {
+  const workflowResult =
+    await triggerWorkflow(
+      owner,
+      repo,
+      "deployflow.yml",
 
-          // Workflow file
-          "deployflow.yml",
+      // IMPORTANT:
+      // workflow_dispatch ref must be a branch/tag.
+      // We use main as the workflow source.
+      previousSuccessfulDeployment.branch,
 
-          // IMPORTANT:
-          // ref must be a branch/tag
-          previousSuccessfulDeployment.branch,
+      // This is the OLD commit we actually want
+      // GitHub Actions to deploy.
+      previousSuccessfulDeployment.commitSha
+    );
 
-          // Old commit to actually deploy
-          previousSuccessfulDeployment.commitSha
-        );
+  // -------------------------------------------------
+  // Save GitHub workflow information
+  // -------------------------------------------------
 
-        console.log(
-          `Rollback triggered for deployment #${rollbackDeployment.id}`
-        );
+  await prisma.deployment.update({
+    where: {
+      id: rollbackDeployment.id
+    },
 
-      } catch (githubError) {
+    data: {
+      workflowRunId:
+        String(workflowResult.workflowRunId),
 
-        console.error(
-          "Failed to trigger rollback:",
-          githubError
-        );
+      workflowUrl:
+        workflowResult.workflowUrl,
 
-        const failedRollback =
-          await prisma.deployment.update({
-            where: {
-              id: rollbackDeployment.id
-            },
+      status: "RUNNING"
+    }
+  });
 
-            data: {
-              status: "FAILED"
-            }
-          });
+  console.log(
+    `Rollback triggered for deployment #${rollbackDeployment.id}`
+  );
 
-        return res.status(500).json({
-          message:
-            "Rollback created but GitHub Actions could not be triggered",
+  console.log(
+    `GitHub workflow run: ${workflowResult.workflowRunId}`
+  );
 
-          deployment:
-            failedRollback
-        });
+} catch (githubError) {
+
+  console.error(
+    "Failed to trigger rollback:",
+    githubError
+  );
+
+  const failedRollback =
+    await prisma.deployment.update({
+      where: {
+        id: rollbackDeployment.id
+      },
+
+      data: {
+        status: "FAILED"
       }
+    });
+
+  return res.status(500).json({
+    message:
+      "Rollback created but GitHub Actions could not be triggered",
+
+    deployment:
+      failedRollback
+  });
+}
 
       // -------------------------------------------------
       // Response

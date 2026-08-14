@@ -1,5 +1,8 @@
 import { prisma } from "../prisma";
-import { getWorkflowRunForCommit } from "./github";
+import {
+  getWorkflowRunForCommit,
+  getWorkflowRunById
+} from "./github";
 
 function getRepositoryParts(repositoryUrl: string) {
   const githubPath = repositoryUrl
@@ -25,10 +28,11 @@ async function syncDeployment(
     repositoryUrl: string;
     branch: string;
     commitSha: string | null;
+    workflowRunId: string | null;
     status: string;
   }
 ) {
-  if (!deployment.commitSha) {
+  if (!deployment.commitSha && !deployment.workflowRunId) {
     return;
   }
 
@@ -40,23 +44,49 @@ async function syncDeployment(
     console.error(
       `Invalid GitHub repository URL for deployment ${deployment.id}`
     );
+
     return;
   }
 
   try {
-    const workflowRun = await getWorkflowRunForCommit(
-      repository.owner,
-      repository.repo,
-      deployment.branch,
-      deployment.commitSha
-    );
+    let workflowRun = null;
+
+    // =====================================================
+    // ROLLBACK / KNOWN WORKFLOW RUN
+    // =====================================================
+
+    if (deployment.workflowRunId) {
+      workflowRun = await getWorkflowRunById(
+        repository.owner,
+        repository.repo,
+        Number(deployment.workflowRunId)
+      );
+    }
+
+    // =====================================================
+    // NORMAL DEPLOYMENT
+    // =====================================================
+
+    if (!workflowRun && deployment.commitSha) {
+      workflowRun = await getWorkflowRunForCommit(
+        repository.owner,
+        repository.repo,
+        deployment.branch,
+        deployment.commitSha
+      );
+    }
 
     if (!workflowRun) {
       console.log(
         `No GitHub Actions run found for deployment ${deployment.id}`
       );
+
       return;
     }
+
+    // =====================================================
+    // DETERMINE DEPLOYMENT STATUS
+    // =====================================================
 
     let status = "PENDING";
 
@@ -81,10 +111,15 @@ async function syncDeployment(
       status = "FAILED";
     }
 
+    // =====================================================
+    // UPDATE DATABASE
+    // =====================================================
+
     await prisma.deployment.update({
       where: {
         id: deployment.id
       },
+
       data: {
         workflowRunId: String(workflowRun.id),
         workflowUrl: workflowRun.htmlUrl,
@@ -111,10 +146,21 @@ export async function checkDeployments() {
           status: {
             in: ["PENDING", "RUNNING"]
           },
-          commitSha: {
-            not: null
-          }
+
+          OR: [
+            {
+              commitSha: {
+                not: null
+              }
+            },
+            {
+              workflowRunId: {
+                not: null
+              }
+            }
+          ]
         },
+
         orderBy: {
           createdAt: "desc"
         }

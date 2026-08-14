@@ -295,6 +295,45 @@ function App() {
 
     return () => clearTimeout(timer);
   }, [repositoryUrl, showDeploymentForm]);
+  const rollbackDeployment = async (
+    deploymentId: number
+  ) => {
+    const token = localStorage.getItem("token");
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/deployments/${deploymentId}/rollback`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        alert(data.message || "Rollback failed");
+        return;
+      }
+
+      alert("Rollback deployment created successfully");
+
+      setDeployments((currentDeployments) => [
+        data.deployment,
+        ...currentDeployments,
+      ]);
+
+      if (data.deployment?.id) {
+        void pollDeploymentStatus(data.deployment.id);
+      }
+    } catch (error) {
+      console.error("Rollback failed:", error);
+      alert("Rollback failed");
+    }
+  };
+
   const pollDeploymentStatus = async (
   deploymentId: number
 ) => {
@@ -1034,6 +1073,17 @@ if (deploymentId) {
                           </div>
 
                         </div>
+
+                        <button
+                          className="secondary-button"
+                          onClick={() => rollbackDeployment(deployment.id)}
+                          disabled={
+                            deployment.status === "PENDING" ||
+                            deployment.status === "RUNNING"
+                          }
+                        >
+                          Rollback
+                        </button>
 
                         {deployment.workflowUrl && (
                           <a

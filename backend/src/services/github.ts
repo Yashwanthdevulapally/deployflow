@@ -22,6 +22,11 @@ export async function getRepository(
   };
 }
 
+
+// =====================================================
+// GET LATEST COMMIT
+// =====================================================
+
 export async function getLatestCommit(
   owner: string,
   repo: string,
@@ -47,6 +52,11 @@ export async function getLatestCommit(
     htmlUrl: response.data.html_url
   };
 }
+
+
+// =====================================================
+// GET LATEST WORKFLOW RUN
+// =====================================================
 
 export async function getLatestWorkflowRun(
   owner: string,
@@ -84,6 +94,11 @@ export async function getLatestWorkflowRun(
     updatedAt: run.updated_at
   };
 }
+
+
+// =====================================================
+// GET WORKFLOW RUN FOR SPECIFIC COMMIT
+// =====================================================
 
 export async function getWorkflowRunForCommit(
   owner: string,
@@ -124,6 +139,11 @@ export async function getWorkflowRunForCommit(
   };
 }
 
+
+// =====================================================
+// GET REPOSITORY WORKFLOWS
+// =====================================================
+
 export async function getWorkflows(
   owner: string,
   repo: string
@@ -149,27 +169,15 @@ export async function getWorkflows(
   }));
 }
 
-/**
- * Trigger a GitHub Actions workflow.
- *
- * ref:
- *   Branch or tag from which GitHub should load the workflow.
- *
- * commitSha:
- *   Optional commit that the workflow should actually deploy.
- *
- * For normal deployment:
- *   triggerWorkflow(owner, repo, workflow, "main")
- *
- * For rollback:
- *   triggerWorkflow(owner, repo, workflow, "main", oldCommitSha)
- */
-export async function triggerWorkflow(
+
+// =====================================================
+// GET WORKFLOW RUN BY ID
+// =====================================================
+
+export async function getWorkflowRunById(
   owner: string,
   repo: string,
-  workflowFile: string,
-  ref: string,
-  commitSha?: string
+  runId: number
 ) {
   const { Octokit } = await import("octokit");
 
@@ -178,22 +186,195 @@ export async function triggerWorkflow(
   });
 
   const response =
+    await octokit.rest.actions.getWorkflowRun({
+      owner,
+      repo,
+      run_id: runId
+    });
+
+  const run = response.data;
+
+  return {
+    id: run.id,
+    name: run.name,
+    status: run.status,
+    conclusion: run.conclusion,
+    sha: run.head_sha,
+    htmlUrl: run.html_url,
+    createdAt: run.created_at,
+    updatedAt: run.updated_at
+  };
+}
+
+
+// =====================================================
+// TRIGGER GITHUB ACTIONS WORKFLOW
+// =====================================================
+//
+// Normal deployment:
+// triggerWorkflow(
+//   owner,
+//   repo,
+//   workflow,
+//   "main"
+// )
+//
+// Rollback:
+// triggerWorkflow(
+//   owner,
+//   repo,
+//   workflow,
+//   "main",
+//   oldCommitSha
+// )
+//
+// IMPORTANT:
+// ref = branch/tag where GitHub loads the workflow
+//
+// deploySha = actual commit that checkout should deploy
+// =====================================================
+
+// =====================================================
+// TRIGGER GITHUB ACTIONS WORKFLOW
+// =====================================================
+//
+// ref:
+//   Branch/tag where GitHub loads the workflow.
+//
+// deploySha:
+//   Optional commit that the workflow should actually
+//   checkout and deploy.
+//
+// Normal deployment:
+//   triggerWorkflow(owner, repo, workflow, "main")
+//
+// Rollback:
+//   triggerWorkflow(
+//     owner,
+//     repo,
+//     workflow,
+//     "main",
+//     previousCommitSha
+//   )
+//
+// =====================================================
+
+export async function triggerWorkflow(
+  owner: string,
+  repo: string,
+  workflowFile: string,
+  ref: string,
+  deploySha?: string
+) {
+  const { Octokit } = await import("octokit");
+
+  const octokit = new Octokit({
+    auth: process.env.GITHUB_TOKEN
+  });
+
+  // -------------------------------------------------
+  // Get existing workflow runs BEFORE dispatch
+  // -------------------------------------------------
+
+  const before =
+    await octokit.rest.actions.listWorkflowRuns({
+      owner,
+      repo,
+      workflow_id: workflowFile,
+      branch: ref,
+      event: "workflow_dispatch",
+      per_page: 10
+    });
+
+  const existingRunIds = new Set(
+    before.data.workflow_runs.map(
+      (run) => run.id
+    )
+  );
+
+  // -------------------------------------------------
+  // Trigger workflow
+  // -------------------------------------------------
+
+  const response =
     await octokit.rest.actions.createWorkflowDispatch({
       owner,
       repo,
       workflow_id: workflowFile,
       ref,
-
-      ...(commitSha
+      inputs: deploySha
         ? {
-            inputs: {
-              commit_sha: commitSha
-            }
+            deploy_sha: deploySha
           }
-        : {})
+        : undefined
     });
 
+  if (response.status !== 204) {
+    throw new Error(
+      `GitHub workflow dispatch failed with status ${response.status}`
+    );
+  }
+
+  console.log(
+    `GitHub workflow dispatched: ${workflowFile}`
+  );
+
+  // -------------------------------------------------
+  // Wait for GitHub to create the workflow run
+  // -------------------------------------------------
+
+  let workflowRun = null;
+
+  for (let attempt = 1; attempt <= 10; attempt++) {
+    await new Promise((resolve) =>
+      setTimeout(resolve, 2000)
+    );
+
+    const runs =
+      await octokit.rest.actions.listWorkflowRuns({
+        owner,
+        repo,
+        workflow_id: workflowFile,
+        branch: ref,
+        event: "workflow_dispatch",
+        per_page: 10
+      });
+
+    workflowRun =
+      runs.data.workflow_runs.find(
+        (run) => !existingRunIds.has(run.id)
+      );
+
+    if (workflowRun) {
+      break;
+    }
+
+    console.log(
+      `Waiting for GitHub workflow run... attempt ${attempt}/10`
+    );
+  }
+
+  // -------------------------------------------------
+  // Make sure run was created
+  // -------------------------------------------------
+
+  if (!workflowRun) {
+    throw new Error(
+      "Workflow was dispatched successfully, but GitHub workflow run could not be found"
+    );
+  }
+
+  console.log(
+    `GitHub workflow run created: ${workflowRun.id}`
+  );
+
+  // -------------------------------------------------
+  // Return workflow information
+  // -------------------------------------------------
+
   return {
-    success: response.status === 204
+    success: true,
+    workflowRunId: workflowRun.id,
+    workflowUrl: workflowRun.html_url
   };
 }
