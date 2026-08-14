@@ -745,23 +745,25 @@ router.get(
 // =====================================================
 // ROLLBACK DEPLOYMENT
 // =====================================================
+// =====================================================
+// ROLLBACK DEPLOYMENT
+// =====================================================
 
 router.post(
   "/:deploymentId/rollback",
   authenticateToken,
   async (req: AuthRequest, res) => {
     try {
-      const deploymentId =
-        Number(req.params.deploymentId);
+      const deploymentId = Number(req.params.deploymentId);
 
-      if (!deploymentId) {
+      if (!deploymentId || Number.isNaN(deploymentId)) {
         return res.status(400).json({
           message: "Invalid deployment ID"
         });
       }
 
       // -------------------------------------------------
-      // Find the deployment being rolled back
+      // Find deployment being rolled back
       // -------------------------------------------------
 
       const deployment =
@@ -795,19 +797,24 @@ router.post(
       }
 
       // -------------------------------------------------
-      // Find latest successful deployment
+      // Find previous successful deployment
       // -------------------------------------------------
 
       const previousSuccessfulDeployment =
         await prisma.deployment.findFirst({
           where: {
             projectId: deployment.projectId,
-            repositoryUrl: deployment.repositoryUrl,
+
+            repositoryUrl:
+              deployment.repositoryUrl,
+
             status: "SUCCESS",
+
             id: {
               lt: deployment.id
             }
           },
+
           orderBy: {
             id: "desc"
           }
@@ -821,7 +828,7 @@ router.post(
       }
 
       // -------------------------------------------------
-      // Make sure previous deployment has a commit
+      // Make sure previous deployment has commit SHA
       // -------------------------------------------------
 
       if (!previousSuccessfulDeployment.commitSha) {
@@ -838,7 +845,7 @@ router.post(
       const githubPath =
         previousSuccessfulDeployment.repositoryUrl
           .replace("https://github.com/", "")
-          .replace(".git", "")
+          .replace(/\.git$/, "")
           .replace(/\/$/, "");
 
       const [owner, repo] =
@@ -891,14 +898,17 @@ router.post(
       try {
         await triggerWorkflow(
           owner,
+
           repo,
+
+          // Workflow file
           "deployflow.yml",
 
-          // GitHub workflow_dispatch ref
-          // must be a branch or tag
+          // IMPORTANT:
+          // ref must be a branch/tag
           previousSuccessfulDeployment.branch,
 
-          // Old commit to deploy
+          // Old commit to actually deploy
           previousSuccessfulDeployment.commitSha
         );
 
@@ -918,6 +928,7 @@ router.post(
             where: {
               id: rollbackDeployment.id
             },
+
             data: {
               status: "FAILED"
             }
@@ -961,5 +972,4 @@ router.post(
     }
   }
 );
-
 export default router;
