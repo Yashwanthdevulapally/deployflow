@@ -11,9 +11,9 @@ on:
 
   workflow_dispatch:
     inputs:
-      commit_sha:
-        description: "Commit to deploy"
-        required: true
+      deploy_sha:
+        description: "Commit SHA to deploy"
+        required: false
         type: string
 
 jobs:
@@ -24,7 +24,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.commit_sha || github.sha }}
+          ref: ${{ inputs.deploy_sha || github.sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
