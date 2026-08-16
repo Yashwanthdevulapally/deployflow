@@ -333,7 +333,50 @@ function App() {
       alert("Rollback failed");
     }
   };
+const retryDeployment = async (
+  deploymentId: number
+) => {
+  const token = localStorage.getItem("token");
 
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/api/deployments/${deploymentId}/retry`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      alert(
+        data.message ||
+          "Failed to retry deployment"
+      );
+      return;
+    }
+
+    alert(
+      "Retry deployment created successfully"
+    );
+
+    // Refresh deployments
+    
+
+  } catch (error) {
+    console.error(
+      "Retry deployment failed:",
+      error
+    );
+
+    alert(
+      "Failed to retry deployment"
+    );
+  }
+};
   const pollDeploymentStatus = async (
   deploymentId: number
 ) => {
@@ -1097,7 +1140,16 @@ if (deploymentId) {
                             GitHub Actions ↗
                           </a>
                         )}
-
+{deployment.status === "FAILED" && (
+  <button
+    className="secondary-button"
+    onClick={() =>
+      retryDeployment(deployment.id)
+    }
+  >
+    Retry
+  </button>
+)}
                       </div>
                     )
                   )}

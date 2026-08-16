@@ -740,6 +740,212 @@ router.get(
 );
 
 // =====================================================
+// RETRY FAILED DEPLOYMENT
+// =====================================================
+
+router.post(
+  "/:deploymentId/retry",
+  authenticateToken,
+  async (req: AuthRequest, res) => {
+    try {
+      const deploymentId = Number(req.params.deploymentId);
+
+      if (!deploymentId) {
+        return res.status(400).json({
+          message: "Invalid deployment ID"
+        });
+      }
+
+      // -------------------------------------------------
+      // Find failed deployment
+      // -------------------------------------------------
+
+      const deployment =
+        await prisma.deployment.findUnique({
+          where: {
+            id: deploymentId
+          },
+          include: {
+            project: true
+          }
+        });
+
+      if (!deployment) {
+        return res.status(404).json({
+          message: "Deployment not found"
+        });
+      }
+
+      // -------------------------------------------------
+      // Check ownership
+      // -------------------------------------------------
+
+      if (
+        deployment.project.userId !==
+        req.user!.userId
+      ) {
+        return res.status(403).json({
+          message:
+            "You are not allowed to retry this deployment"
+        });
+      }
+
+      // -------------------------------------------------
+      // Retry is allowed only for FAILED deployments
+      // -------------------------------------------------
+
+      if (deployment.status !== "FAILED") {
+        return res.status(400).json({
+          message:
+            "Only failed deployments can be retried"
+        });
+      }
+
+      // -------------------------------------------------
+      // Make sure deployment has a commit
+      // -------------------------------------------------
+
+      if (!deployment.commitSha) {
+        return res.status(400).json({
+          message:
+            "Failed deployment has no commit SHA"
+        });
+      }
+
+      // -------------------------------------------------
+      // Extract GitHub repository
+      // -------------------------------------------------
+
+      const githubPath =
+        deployment.repositoryUrl
+          .replace("https://github.com/", "")
+          .replace(".git", "")
+          .replace(/\/$/, "");
+
+      const [owner, repo] =
+        githubPath.split("/");
+
+      if (!owner || !repo) {
+        return res.status(400).json({
+          message:
+            "Invalid GitHub repository URL"
+        });
+      }
+
+      // -------------------------------------------------
+      // Create retry deployment
+      // -------------------------------------------------
+
+      const retryDeployment =
+        await prisma.deployment.create({
+          data: {
+            projectId:
+              deployment.projectId,
+
+            repositoryUrl:
+              deployment.repositoryUrl,
+
+            branch:
+              deployment.branch,
+
+            workflow:
+              deployment.workflow,
+
+            commitSha:
+              deployment.commitSha,
+
+            commitMessage:
+              deployment.commitMessage,
+
+            status:
+              "PENDING"
+          }
+        });
+
+      // -------------------------------------------------
+      // Trigger GitHub Actions
+      //
+      // ref = branch containing the workflow
+      // deploySha = exact commit we want to build
+      // -------------------------------------------------
+
+      try {
+        const workflowResult =
+          await triggerWorkflow(
+            owner,
+            repo,
+            deployment.workflow || "deployflow.yml",
+            deployment.branch,
+            deployment.commitSha
+          );
+
+        if (!workflowResult.success) {
+          throw new Error(
+            "GitHub Actions workflow dispatch failed"
+          );
+        }
+
+        console.log(
+          `Retry triggered for deployment #${retryDeployment.id}`
+        );
+
+      } catch (githubError) {
+
+        console.error(
+          "Failed to trigger retry:",
+          githubError
+        );
+
+        const failedRetry =
+          await prisma.deployment.update({
+            where: {
+              id: retryDeployment.id
+            },
+            data: {
+              status: "FAILED"
+            }
+          });
+
+        return res.status(500).json({
+          message:
+            "Retry deployment created but GitHub Actions could not be triggered",
+
+          deployment:
+            failedRetry
+        });
+      }
+
+      // -------------------------------------------------
+      // Response
+      // -------------------------------------------------
+
+      return res.status(201).json({
+        message:
+          "Retry deployment created and GitHub Actions triggered",
+
+        deployment:
+          retryDeployment,
+
+        retriedDeployment:
+          deployment.id
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Retry deployment failed:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to retry deployment"
+      });
+    }
+  }
+);
+
+// =====================================================
 // ROLLBACK DEPLOYMENT
 // =====================================================
 // =====================================================
