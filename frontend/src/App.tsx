@@ -24,6 +24,17 @@ interface Deployment {
   startedAt?: string;
   completedAt?: string;
   duration?: number;
+  jobs?: DeploymentJob[];
+}
+
+interface DeploymentJob {
+  id: number;
+  name: string;
+  status: string;
+  conclusion?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  htmlUrl: string;
 }
 
 const API_BASE_URL = "http://localhost:5001";
@@ -50,6 +61,8 @@ function App() {
 
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [loadingDeployments, setLoadingDeployments] = useState(false);
+  const [expandedDeployment, setExpandedDeployment] = useState<number | null>(null);
+  const [loadingJobs, setLoadingJobs] = useState<number | null>(null);
 
   const [showDeploymentForm, setShowDeploymentForm] = useState(false);
 
@@ -298,6 +311,54 @@ function App() {
 
     return () => clearTimeout(timer);
   }, [repositoryUrl, showDeploymentForm]);
+  const fetchDeploymentJobs = async (
+    deploymentId: number
+  ) => {
+    const token = localStorage.getItem("token");
+
+    try {
+      setLoadingJobs(deploymentId);
+
+      const response = await fetch(
+        `${API_BASE_URL}/api/deployments/${deploymentId}/jobs`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        alert(data.message || "Failed to fetch deployment jobs");
+        return;
+      }
+
+      setDeployments((currentDeployments) =>
+        currentDeployments.map((deployment) =>
+          deployment.id === deploymentId
+            ? {
+                ...deployment,
+                jobs: data.jobs,
+              }
+            : deployment
+        )
+      );
+
+      setExpandedDeployment(deploymentId);
+    } catch (error) {
+      console.error(
+        "Failed to fetch deployment jobs:",
+        error
+      );
+
+      alert("Failed to fetch deployment jobs");
+    } finally {
+      setLoadingJobs(null);
+    }
+  };
+
   const rollbackDeployment = async (
     deploymentId: number
   ) => {
@@ -1202,6 +1263,84 @@ if (deploymentId) {
                           >
                             GitHub Actions ↗
                           </a>
+                        )}
+
+                        {deployment.workflowRunId && (
+                          <button
+                            className="secondary-button"
+                            onClick={() =>
+                              fetchDeploymentJobs(
+                                deployment.id
+                              )
+                            }
+                            disabled={
+                              loadingJobs === deployment.id
+                            }
+                          >
+                            {loadingJobs === deployment.id
+                              ? "Loading..."
+                              : expandedDeployment === deployment.id
+                              ? "Hide jobs"
+                              : "View jobs"}
+                          </button>
+                        )}
+
+                        {expandedDeployment === deployment.id && (
+                          <div className="deployment-jobs">
+                            {deployment.jobs &&
+                            deployment.jobs.length > 0 ? (
+                              deployment.jobs.map((job) => (
+                                <div
+                                  key={job.id}
+                                  className="deployment-job"
+                                >
+                                  <strong>
+                                    {job.name}
+                                  </strong>
+
+                                  <span>
+                                    Status: {job.status}
+                                  </span>
+
+                                  <span>
+                                    Conclusion:{" "}
+                                    {job.conclusion || "—"}
+                                  </span>
+
+                                  {job.startedAt && (
+                                    <span>
+                                      Started:{" "}
+                                      {new Date(
+                                        job.startedAt
+                                      ).toLocaleString()}
+                                    </span>
+                                  )}
+
+                                  {job.completedAt && (
+                                    <span>
+                                      Completed:{" "}
+                                      {new Date(
+                                        job.completedAt
+                                      ).toLocaleString()}
+                                    </span>
+                                  )}
+
+                                  <a
+                                    className="github-link"
+                                    href={job.htmlUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    View job ↗
+                                  </a>
+                                </div>
+                              ))
+                            ) : (
+                              <div>
+                                No jobs found for this deployment.
+                              </div>
+                            )}
+                          </div>
                         )}
 {deployment.status === "FAILED" && (
   <button

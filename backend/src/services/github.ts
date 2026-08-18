@@ -378,3 +378,37 @@ export async function triggerWorkflow(
     workflowUrl: workflowRun.html_url
   };
 }
+
+// =====================================================
+// GET WORKFLOW RUN JOBS
+// =====================================================
+
+export async function getWorkflowRunJobs(
+  owner: string,
+  repo: string,
+  runId: number
+) {
+  const { Octokit } = await import("octokit");
+
+  const octokit = new Octokit({
+    auth: process.env.GITHUB_TOKEN
+  });
+
+  const response =
+    await octokit.rest.actions.listJobsForWorkflowRun({
+      owner,
+      repo,
+      run_id: runId,
+      per_page: 100
+    });
+
+  return response.data.jobs.map((job) => ({
+    id: job.id,
+    name: job.name,
+    status: job.status,
+    conclusion: job.conclusion,
+    startedAt: job.started_at,
+    completedAt: job.completed_at,
+    htmlUrl: job.html_url
+  }));
+}

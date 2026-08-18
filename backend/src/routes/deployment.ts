@@ -5,7 +5,8 @@ import {
   getLatestCommit,
   getWorkflowRunForCommit,
   getWorkflows,
-  triggerWorkflow
+  triggerWorkflow,
+  getWorkflowRunJobs
 } from "../services/github";
 
 import {
@@ -1346,4 +1347,96 @@ try {
     }
   }
 );
+
+// =====================================================
+// GET GITHUB ACTIONS JOBS
+// =====================================================
+
+router.get(
+  "/:deploymentId/jobs",
+  authenticateToken,
+  async (req: AuthRequest, res) => {
+    try {
+      const deploymentId = Number(req.params.deploymentId);
+
+      if (!deploymentId) {
+        return res.status(400).json({
+          message: "Invalid deployment ID"
+        });
+      }
+
+      const deployment =
+        await prisma.deployment.findUnique({
+          where: {
+            id: deploymentId
+          },
+          include: {
+            project: true
+          }
+        });
+
+      if (!deployment) {
+        return res.status(404).json({
+          message: "Deployment not found"
+        });
+      }
+
+      if (
+        deployment.project.userId !==
+        req.user!.userId
+      ) {
+        return res.status(403).json({
+          message: "You are not allowed to view this deployment"
+        });
+      }
+
+      if (!deployment.workflowRunId) {
+        return res.status(400).json({
+          message: "Deployment has no GitHub Actions run"
+        });
+      }
+
+      const githubPath =
+        deployment.repositoryUrl
+          .replace("https://github.com/", "")
+          .replace(".git", "")
+          .replace(/\/$/, "");
+
+      const [owner, repo] =
+        githubPath.split("/");
+
+      if (!owner || !repo) {
+        return res.status(400).json({
+          message: "Invalid GitHub repository URL"
+        });
+      }
+
+      const jobs =
+        await getWorkflowRunJobs(
+          owner,
+          repo,
+          Number(deployment.workflowRunId)
+        );
+
+      return res.json({
+        deploymentId,
+        workflowRunId:
+          deployment.workflowRunId,
+        jobs
+      });
+
+    } catch (error) {
+      console.error(
+        "Failed to fetch GitHub Actions jobs:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to fetch GitHub Actions jobs"
+      });
+    }
+  }
+);
+
 export default router;

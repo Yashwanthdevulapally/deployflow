@@ -1184,3 +1184,31 @@ textarea {
     padding: 25px;
   }
 }
+.deployment-jobs {
+  width: 100%;
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid #d9dee7;
+  border-radius: 10px;
+  background: #f7f8fa;
+  box-sizing: border-box;
+}
+
+.deployment-job {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  background: white;
+  border-radius: 8px;
+}
+
+.deployment-job strong {
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+
+.deployment-job span {
+  display: block;
+  line-height: 1.5;
+}
