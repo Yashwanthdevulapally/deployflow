@@ -25,10 +25,25 @@ app.use("/api/deployments", deploymentRoutes);
 app.use("/api/github", githubRoutes);
 
 // Health check
-app.get("/", (req, res) => {
-  res.json({
-    message: "DeployFlow backend is running!"
-  });
+// Health check
+app.get("/health", async (req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+
+    res.status(200).json({
+      status: "healthy",
+      service: "deployflow-backend",
+      database: "connected"
+    });
+  } catch (error) {
+    console.error("Health check failed:", error);
+
+    res.status(503).json({
+      status: "unhealthy",
+      service: "deployflow-backend",
+      database: "disconnected"
+    });
+  }
 });
 
 // Database test

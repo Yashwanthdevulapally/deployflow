@@ -38,6 +38,9 @@ model Deployment {
   workflowRunId String?
   workflowUrl   String?
   status        String   @default("PENDING")
+  startedAt     DateTime?
+  completedAt   DateTime?
+  duration      Int?
   createdAt     DateTime @default(now())
   rollbackOfId Int?
   rollbackOf   Deployment? @relation("DeploymentRollback", fields: [rollbackOfId], references: [id])

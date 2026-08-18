@@ -21,6 +21,9 @@ interface Deployment {
   commitMessage?: string;
   workflowRunId?: string;
   workflowUrl?: string;
+  startedAt?: string;
+  completedAt?: string;
+  duration?: number;
 }
 
 const API_BASE_URL = "http://localhost:5001";
@@ -363,8 +366,18 @@ const retryDeployment = async (
       "Retry deployment created successfully"
     );
 
-    // Refresh deployments
-    
+    if (data.deployment) {
+      setDeployments((currentDeployments) => [
+        data.deployment,
+        ...currentDeployments,
+      ]);
+
+      if (data.deployment.id) {
+        void pollDeploymentStatus(
+          data.deployment.id
+        );
+      }
+    }
 
   } catch (error) {
     console.error(
@@ -377,6 +390,7 @@ const retryDeployment = async (
     );
   }
 };
+
   const pollDeploymentStatus = async (
   deploymentId: number
 ) => {
@@ -414,6 +428,15 @@ const retryDeployment = async (
               workflowUrl:
                 data.workflowUrl ??
                 deployment.workflowUrl,
+              startedAt:
+                data.startedAt ??
+                deployment.startedAt,
+              completedAt:
+                data.completedAt ??
+                deployment.completedAt,
+              duration:
+                data.duration ??
+                deployment.duration,
             }
           : deployment
       )
@@ -1110,6 +1133,46 @@ if (deploymentId) {
                             {deployment.commitMessage && (
                               <div className="commit-message">
                                 {deployment.commitMessage}
+                              </div>
+                            )}
+
+                            {(deployment.startedAt ||
+                              deployment.completedAt ||
+                              deployment.duration !== undefined) && (
+                              <div className="deployment-observability">
+
+                                {deployment.startedAt && (
+                                  <span>
+                                    Started:{" "}
+                                    {new Date(
+                                      deployment.startedAt
+                                    ).toLocaleString()}
+                                  </span>
+                                )}
+
+                                {deployment.completedAt && (
+                                  <span>
+                                    Completed:{" "}
+                                    {new Date(
+                                      deployment.completedAt
+                                    ).toLocaleString()}
+                                  </span>
+                                )}
+
+                                {deployment.duration !== undefined &&
+                                  deployment.duration !== null && (
+                                    <span>
+                                      Duration:{" "}
+                                      {deployment.duration}s
+                                    </span>
+                                  )}
+
+                                {deployment.workflowRunId && (
+                                  <span>
+                                    Run #{deployment.workflowRunId}
+                                  </span>
+                                )}
+
                               </div>
                             )}
 

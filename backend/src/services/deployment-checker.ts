@@ -30,6 +30,9 @@ async function syncDeployment(
     commitSha: string | null;
     workflowRunId: string | null;
     status: string;
+    startedAt?: Date | null;
+    completedAt?: Date | null;
+    duration?: number | null;
   }
 ) {
   if (!deployment.commitSha && !deployment.workflowRunId) {
@@ -112,20 +115,78 @@ async function syncDeployment(
     }
 
     // =====================================================
-    // UPDATE DATABASE
+    // DEPLOYMENT OBSERVABILITY
     // =====================================================
 
-    await prisma.deployment.update({
-      where: {
-        id: deployment.id
-      },
+    const startedAt =
+      deployment.startedAt ??
+      new Date(workflowRun.createdAt);
 
-      data: {
-        workflowRunId: String(workflowRun.id),
-        workflowUrl: workflowRun.htmlUrl,
-        status
-      }
-    });
+    let completedAt = deployment.completedAt;
+    let duration = deployment.duration;
+
+    if (status === "RUNNING") {
+      // Record when the GitHub Actions run actually started.
+      await prisma.deployment.update({
+        where: {
+          id: deployment.id
+        },
+
+        data: {
+          workflowRunId: String(workflowRun.id),
+          workflowUrl: workflowRun.htmlUrl,
+          status,
+          startedAt
+        }
+      });
+    } else if (
+      status === "SUCCESS" ||
+      status === "FAILED"
+    ) {
+      // GitHub's updatedAt represents the end of the workflow run.
+      completedAt =
+        deployment.completedAt ??
+        new Date(workflowRun.updatedAt);
+
+      duration =
+        Math.max(
+          0,
+          Math.round(
+            (
+              completedAt.getTime() -
+              startedAt.getTime()
+            ) / 1000
+          )
+        );
+
+      await prisma.deployment.update({
+        where: {
+          id: deployment.id
+        },
+
+        data: {
+          workflowRunId: String(workflowRun.id),
+          workflowUrl: workflowRun.htmlUrl,
+          status,
+          startedAt,
+          completedAt,
+          duration
+        }
+      });
+    } else {
+      await prisma.deployment.update({
+        where: {
+          id: deployment.id
+        },
+
+        data: {
+          workflowRunId: String(workflowRun.id),
+          workflowUrl: workflowRun.htmlUrl,
+          status,
+          startedAt
+        }
+      });
+    }
 
     console.log(
       `Deployment #${deployment.id}: ${deployment.status} -> ${status}`
@@ -140,13 +201,15 @@ async function syncDeployment(
 
 export async function checkDeployments() {
   try {
+    // Only actively running deployments need polling.
+    // SUCCESS and FAILED deployments are already finished
+    // and should never be checked again.
     const deployments =
       await prisma.deployment.findMany({
         where: {
           status: {
             in: ["PENDING", "RUNNING"]
           },
-
           OR: [
             {
               commitSha: {
@@ -171,7 +234,7 @@ export async function checkDeployments() {
     }
 
     console.log(
-      `Checking ${deployments.length} deployment(s)...`
+      `Checking ${deployments.length} active deployment(s)...`
     );
 
     for (const deployment of deployments) {

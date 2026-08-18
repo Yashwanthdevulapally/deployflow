@@ -176,16 +176,42 @@ router.post(
       // -----------------------------------------------
 
       try {
-        await triggerWorkflow(
-          owner,
-          repo,
-          deploymentWorkflow,
-          deploymentBranch
-        );
+  const workflowResult =
+    await triggerWorkflow(
+      owner,
+      repo,
+      deploymentWorkflow,
+      deploymentBranch
+    );
 
-        console.log(
-          `GitHub Actions triggered for deployment #${deployment.id}`
-        );
+if (!workflowResult.success) {
+  throw new Error(
+    "GitHub Actions workflow dispatch failed"
+  );
+}
+  await prisma.deployment.update({
+    where: {
+      id: deployment.id
+    },
+
+    data: {
+      workflowRunId:
+        String(workflowResult.workflowRunId),
+
+      workflowUrl:
+        workflowResult.workflowUrl,
+
+      status: "RUNNING"
+    }
+  });
+
+  console.log(
+    `GitHub Actions triggered for deployment #${deployment.id}`
+  );
+
+  console.log(
+    `GitHub workflow run: ${workflowResult.workflowRunId}`
+  );
 
       } catch (githubError) {
 
@@ -722,7 +748,13 @@ router.get(
         workflowRunId:
           updatedDeployment.workflowRunId,
         workflowUrl:
-          updatedDeployment.workflowUrl
+          updatedDeployment.workflowUrl,
+        startedAt:
+          updatedDeployment.startedAt,
+        completedAt:
+          updatedDeployment.completedAt,
+        duration:
+          updatedDeployment.duration
       });
 
     } catch (error) {
@@ -738,7 +770,95 @@ router.get(
     }
   }
 );
+// =====================================================
+// GET DEPLOYMENT DETAILS
+// =====================================================
 
+router.get(
+  "/:deploymentId",
+  authenticateToken,
+  async (req: AuthRequest, res) => {
+    try {
+      const deploymentId =
+        Number(req.params.deploymentId);
+
+      if (!deploymentId) {
+        return res.status(400).json({
+          message: "Invalid deployment ID"
+        });
+      }
+
+      // -----------------------------------------------
+      // Find deployment
+      // -----------------------------------------------
+
+      const deployment =
+        await prisma.deployment.findFirst({
+          where: {
+            id: deploymentId,
+            project: {
+              userId: req.user!.userId
+            }
+          },
+          include: {
+            project: true
+          }
+        });
+
+      if (!deployment) {
+        return res.status(404).json({
+          message: "Deployment not found"
+        });
+      }
+
+      // -----------------------------------------------
+      // Return deployment details
+      // -----------------------------------------------
+
+      return res.json({
+        id: deployment.id,
+        repositoryUrl:
+          deployment.repositoryUrl,
+        branch:
+          deployment.branch,
+        workflow:
+          deployment.workflow,
+        commitSha:
+          deployment.commitSha,
+        commitMessage:
+          deployment.commitMessage,
+        status:
+          deployment.status,
+        workflowRunId:
+          deployment.workflowRunId,
+        workflowUrl:
+          deployment.workflowUrl,
+        createdAt:
+          deployment.createdAt,
+        startedAt:
+          deployment.startedAt,
+        completedAt:
+          deployment.completedAt,
+        duration:
+          deployment.duration,
+        projectId:
+          deployment.projectId
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Failed to fetch deployment details:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to fetch deployment details"
+      });
+    }
+  }
+);
 // =====================================================
 // RETRY FAILED DEPLOYMENT
 // =====================================================
@@ -885,8 +1005,28 @@ router.post(
           );
         }
 
+        await prisma.deployment.update({
+          where: {
+            id: retryDeployment.id
+          },
+
+          data: {
+            workflowRunId:
+              String(workflowResult.workflowRunId),
+
+            workflowUrl:
+              workflowResult.workflowUrl,
+
+            status: "RUNNING"
+          }
+        });
+
         console.log(
           `Retry triggered for deployment #${retryDeployment.id}`
+        );
+
+        console.log(
+          `GitHub workflow run: ${workflowResult.workflowRunId}`
         );
 
       } catch (githubError) {
