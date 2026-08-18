@@ -57,8 +57,9 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: npm run build
+
       - name: Build backend Docker image
-        run: docker build -t deployflow-backend:ci ./backend
+        run: docker build --build-arg DATABASE_URL=postgresql://postgres:postgres@localhost:5432/deployflow -t deployflow-backend:ci ./backend
 
       - name: Build frontend Docker image
         run: docker build -t deployflow-frontend:ci ./frontend
