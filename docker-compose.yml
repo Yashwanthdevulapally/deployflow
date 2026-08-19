@@ -28,6 +28,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        DATABASE_URL: ${DATABASE_URL}
 
     container_name: deployflow-backend
     restart: always

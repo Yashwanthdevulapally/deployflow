@@ -516,6 +516,127 @@ router.post(
 
 
 // =====================================================
+// GET DEPLOYMENT DETAILS + GITHUB JOBS
+// =====================================================
+
+router.get(
+  "/:deploymentId/details",
+  authenticateToken,
+  async (req: AuthRequest, res) => {
+    try {
+      const deploymentId =
+        Number(req.params.deploymentId);
+
+      if (!Number.isInteger(deploymentId)) {
+        return res.status(400).json({
+          message: "Invalid deployment ID"
+        });
+      }
+
+      // -----------------------------------------------
+      // Find deployment and project
+      // -----------------------------------------------
+
+      const deployment =
+        await prisma.deployment.findUnique({
+          where: {
+            id: deploymentId
+          },
+          include: {
+            project: true
+          }
+        });
+
+      if (!deployment) {
+        return res.status(404).json({
+          message: "Deployment not found"
+        });
+      }
+
+      // -----------------------------------------------
+      // Check ownership
+      // -----------------------------------------------
+
+      if (
+        deployment.project.userId !==
+        req.user!.userId
+      ) {
+        return res.status(403).json({
+          message:
+            "You are not allowed to view this deployment"
+        });
+      }
+
+      // -----------------------------------------------
+      // Deployment must have a workflow run
+      // -----------------------------------------------
+
+      if (!deployment.workflowRunId) {
+        return res.status(400).json({
+          message:
+            "Deployment does not have a GitHub Actions workflow run"
+        });
+      }
+
+      // -----------------------------------------------
+      // Extract GitHub repository
+      // -----------------------------------------------
+
+      const githubPath =
+        deployment.repositoryUrl
+          .replace(
+            "https://github.com/",
+            ""
+          )
+          .replace(".git", "")
+          .replace(/\/$/, "");
+
+      const [owner, repo] =
+        githubPath.split("/");
+
+      if (!owner || !repo) {
+        return res.status(400).json({
+          message:
+            "Invalid GitHub repository URL"
+        });
+      }
+
+      // -----------------------------------------------
+      // Get jobs from GitHub Actions
+      // -----------------------------------------------
+
+      const jobs =
+        await getWorkflowRunJobs(
+          owner,
+          repo,
+          Number(deployment.workflowRunId)
+        );
+
+      // -----------------------------------------------
+      // Response
+      // -----------------------------------------------
+
+      return res.json({
+        deployment,
+        jobs
+      });
+
+    } catch (error) {
+      console.error(
+        "Failed to fetch deployment details:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to fetch deployment details"
+      });
+    }
+  }
+);
+
+
+// =====================================================
 // MANUAL UPDATE DEPLOYMENT STATUS
 // =====================================================
 

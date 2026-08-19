@@ -63,6 +63,7 @@ function App() {
   const [loadingDeployments, setLoadingDeployments] = useState(false);
   const [expandedDeployment, setExpandedDeployment] = useState<number | null>(null);
   const [loadingJobs, setLoadingJobs] = useState<number | null>(null);
+  const [showDetails, setShowDetails] = useState<number | null>(null);
 
   const [showDeploymentForm, setShowDeploymentForm] = useState(false);
 
@@ -1263,6 +1264,117 @@ if (deploymentId) {
                           >
                             GitHub Actions ↗
                           </a>
+                        )}
+
+                        <button
+                          className="secondary-button"
+                          onClick={() =>
+                            setShowDetails(
+                              showDetails === deployment.id
+                                ? null
+                                : deployment.id
+                            )
+                          }
+                        >
+                          {showDetails === deployment.id
+                            ? "Hide details"
+                            : "View details"}
+                        </button>
+
+                        {showDetails === deployment.id && (
+                          <div className="deployment-details">
+
+                            <h4>Deployment Details</h4>
+
+                            <div className="details-grid">
+
+                              <div>
+                                <strong>Repository</strong>
+                                <span>{deployment.repositoryUrl}</span>
+                              </div>
+
+                              <div>
+                                <strong>Branch</strong>
+                                <span>{deployment.branch}</span>
+                              </div>
+
+                              <div>
+                                <strong>Workflow</strong>
+                                <span>{deployment.workflow}</span>
+                              </div>
+
+                              <div>
+                                <strong>Status</strong>
+                                <span>{deployment.status}</span>
+                              </div>
+
+                              <div>
+                                <strong>Commit</strong>
+                                <span>
+                                  {deployment.commitSha || "—"}
+                                </span>
+                              </div>
+
+                              <div>
+                                <strong>Workflow Run</strong>
+                                <span>
+                                  {deployment.workflowRunId
+                                    ? `#${deployment.workflowRunId}`
+                                    : "—"}
+                                </span>
+                              </div>
+
+                              <div>
+                                <strong>Created</strong>
+                                <span>
+                                  {new Date(
+                                    deployment.createdAt
+                                  ).toLocaleString()}
+                                </span>
+                              </div>
+
+                              <div>
+                                <strong>Started</strong>
+                                <span>
+                                  {deployment.startedAt
+                                    ? new Date(
+                                        deployment.startedAt
+                                      ).toLocaleString()
+                                    : "—"}
+                                </span>
+                              </div>
+
+                              <div>
+                                <strong>Completed</strong>
+                                <span>
+                                  {deployment.completedAt
+                                    ? new Date(
+                                        deployment.completedAt
+                                      ).toLocaleString()
+                                    : "—"}
+                                </span>
+                              </div>
+
+                              <div>
+                                <strong>Duration</strong>
+                                <span>
+                                  {deployment.duration !== undefined &&
+                                  deployment.duration !== null
+                                    ? `${deployment.duration}s`
+                                    : "—"}
+                                </span>
+                              </div>
+
+                            </div>
+
+                            {deployment.commitMessage && (
+                              <div className="commit-detail">
+                                <strong>Commit Message</strong>
+                                <p>{deployment.commitMessage}</p>
+                              </div>
+                            )}
+
+                          </div>
                         )}
 
                         {deployment.workflowRunId && (

@@ -1212,3 +1212,59 @@ textarea {
   display: block;
   line-height: 1.5;
 }
+
+
+/* =====================================================
+   DEPLOYMENT DETAILS
+   ===================================================== */
+
+.deployment-details {
+  width: 100%;
+  margin-top: 16px;
+  padding: 18px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  box-sizing: border-box;
+}
+
+.deployment-details h4 {
+  margin: 0 0 16px;
+}
+
+.details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.details-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.details-grid strong,
+.commit-detail strong {
+  font-size: 12px;
+  text-transform: uppercase;
+  opacity: 0.65;
+}
+
+.details-grid span {
+  word-break: break-word;
+}
+
+.commit-detail {
+  margin-top: 18px;
+}
+
+.commit-detail p {
+  margin: 6px 0 0;
+  word-break: break-word;
+}
+
+@media (max-width: 700px) {
+  .details-grid {
+    grid-template-columns: 1fr;
+  }
+}

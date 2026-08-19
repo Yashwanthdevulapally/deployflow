@@ -296,6 +296,8 @@ export async function triggerWorkflow(
   // Trigger workflow
   // -------------------------------------------------
 
+  const dispatchStartedAt = new Date();
+
   const response =
     await octokit.rest.actions.createWorkflowDispatch({
       owner,
@@ -320,12 +322,12 @@ export async function triggerWorkflow(
   );
 
   // -------------------------------------------------
-  // Wait for GitHub to create the workflow run
+  // Wait for GitHub to create the NEW workflow run
   // -------------------------------------------------
 
   let workflowRun = null;
 
-  for (let attempt = 1; attempt <= 10; attempt++) {
+  for (let attempt = 1; attempt <= 15; attempt++) {
     await new Promise((resolve) =>
       setTimeout(resolve, 2000)
     );
@@ -337,20 +339,25 @@ export async function triggerWorkflow(
         workflow_id: workflowFile,
         branch: ref,
         event: "workflow_dispatch",
-        per_page: 10
+        per_page: 100
       });
 
     workflowRun =
-      runs.data.workflow_runs.find(
-        (run) => !existingRunIds.has(run.id)
-      );
+      runs.data.workflow_runs.find((run) => {
+        const createdAt = new Date(run.created_at);
+
+        return (
+          !existingRunIds.has(run.id) &&
+          createdAt >= dispatchStartedAt
+        );
+      });
 
     if (workflowRun) {
       break;
     }
 
     console.log(
-      `Waiting for GitHub workflow run... attempt ${attempt}/10`
+      `Waiting for NEW GitHub workflow run... attempt ${attempt}/15`
     );
   }
 
