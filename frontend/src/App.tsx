@@ -63,6 +63,9 @@ function App() {
   const [loadingDeployments, setLoadingDeployments] = useState(false);
   const [expandedDeployment, setExpandedDeployment] = useState<number | null>(null);
   const [loadingJobs, setLoadingJobs] = useState<number | null>(null);
+  const [expandedJob, setExpandedJob] = useState<number | null>(null);
+  const [jobLogs, setJobLogs] = useState<Record<number, string>>({});
+  const [loadingLogs, setLoadingLogs] = useState<number | null>(null);
   const [showDetails, setShowDetails] = useState<number | null>(null);
 
   const [showDeploymentForm, setShowDeploymentForm] = useState(false);
@@ -357,6 +360,45 @@ function App() {
       alert("Failed to fetch deployment jobs");
     } finally {
       setLoadingJobs(null);
+    }
+  };
+
+  const fetchJobLogs = async (
+    deploymentId: number,
+    jobId: number
+  ) => {
+    const token = localStorage.getItem("token");
+
+    try {
+      setLoadingLogs(jobId);
+
+      const response = await fetch(
+        `${API_BASE_URL}/api/deployments/${deploymentId}/jobs/${jobId}/logs`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        alert(data.message || "Failed to fetch job logs");
+        return;
+      }
+
+      setJobLogs((currentLogs) => ({
+        ...currentLogs,
+        [jobId]: data.logs,
+      }));
+
+      setExpandedJob(jobId);
+    } catch (error) {
+      console.error("Failed to fetch job logs:", error);
+      alert("Failed to fetch job logs");
+    } finally {
+      setLoadingLogs(null);
     }
   };
 
@@ -1445,6 +1487,34 @@ if (deploymentId) {
                                   >
                                     View job ↗
                                   </a>
+
+                                  <button
+                                    className="secondary-button"
+                                    onClick={() =>
+                                      expandedJob === job.id
+                                        ? setExpandedJob(null)
+                                        : fetchJobLogs(
+                                            deployment.id,
+                                            job.id
+                                          )
+                                    }
+                                    disabled={
+                                      loadingLogs === job.id
+                                    }
+                                  >
+                                    {loadingLogs === job.id
+                                      ? "Loading logs..."
+                                      : expandedJob === job.id
+                                      ? "Hide logs"
+                                      : "View logs"}
+                                  </button>
+
+                                  {expandedJob === job.id &&
+                                    jobLogs[job.id] !== undefined && (
+                                      <pre className="deployment-logs">
+                                        {jobLogs[job.id]}
+                                      </pre>
+                                  )}
                                 </div>
                               ))
                             ) : (

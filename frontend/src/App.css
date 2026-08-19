@@ -1268,3 +1268,24 @@ textarea {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Deployment job logs */
+
+.deployment-logs {
+  width: 100%;
+  max-height: 420px;
+  overflow: auto;
+  margin: 12px 0 0;
+  padding: 16px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background: #111827;
+  color: #e5e7eb;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border: 1px solid #374151;
+}
