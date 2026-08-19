@@ -207,21 +207,10 @@ export async function checkDeployments() {
     const deployments =
       await prisma.deployment.findMany({
         where: {
-          status: {
-            in: ["PENDING", "RUNNING"]
-          },
-          OR: [
-            {
-              commitSha: {
-                not: null
-              }
-            },
-            {
-              workflowRunId: {
-                not: null
-              }
-            }
-          ]
+          status: "RUNNING",
+          workflowRunId: {
+            not: null
+          }
         },
 
         orderBy: {
