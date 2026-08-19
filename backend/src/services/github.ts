@@ -419,3 +419,53 @@ export async function getWorkflowRunJobs(
     htmlUrl: job.html_url
   }));
 }
+
+
+// =====================================================
+// GET GITHUB ACTIONS JOB LOGS
+// =====================================================
+
+export async function getWorkflowJobLogs(
+  owner: string,
+  repo: string,
+  jobId: number
+) {
+  const { Octokit } = await import("octokit");
+
+  const octokit = new Octokit({
+    auth: process.env.GITHUB_TOKEN
+  });
+
+  const response =
+    await octokit.rest.actions.downloadJobLogsForWorkflowRun({
+      owner,
+      repo,
+      job_id: jobId,
+      request: {
+        redirect: "manual"
+      }
+    });
+
+  const location =
+    response.headers.location;
+
+  if (!location) {
+    throw new Error(
+      "GitHub did not return a log download URL"
+    );
+  }
+
+  const logsResponse =
+    await fetch(location);
+
+  if (!logsResponse.ok) {
+    throw new Error(
+      `Failed to download GitHub job logs: ${logsResponse.status}`
+    );
+  }
+
+  const logs =
+    await logsResponse.text();
+
+  return logs;
+}

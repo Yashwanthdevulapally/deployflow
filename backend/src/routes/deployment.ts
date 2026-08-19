@@ -6,7 +6,8 @@ import {
   getWorkflowRunForCommit,
   getWorkflows,
   triggerWorkflow,
-  getWorkflowRunJobs
+  getWorkflowRunJobs,
+  getWorkflowJobLogs
 } from "../services/github";
 
 import {
@@ -1555,6 +1556,127 @@ router.get(
       return res.status(500).json({
         message:
           "Failed to fetch GitHub Actions jobs"
+      });
+    }
+  }
+);
+
+
+// =====================================================
+// GET GITHUB ACTIONS JOB LOGS
+// =====================================================
+
+router.get(
+  "/:deploymentId/jobs/:jobId/logs",
+  authenticateToken,
+  async (req: AuthRequest, res) => {
+    try {
+      const deploymentId =
+        Number(req.params.deploymentId);
+
+      const jobId =
+        Number(req.params.jobId);
+
+      if (
+        !Number.isInteger(deploymentId) ||
+        !Number.isInteger(jobId)
+      ) {
+        return res.status(400).json({
+          message: "Invalid deployment or job ID"
+        });
+      }
+
+      // -----------------------------------------------
+      // Find deployment
+      // -----------------------------------------------
+
+      const deployment =
+        await prisma.deployment.findUnique({
+          where: {
+            id: deploymentId
+          },
+          include: {
+            project: true
+          }
+        });
+
+      if (!deployment) {
+        return res.status(404).json({
+          message: "Deployment not found"
+        });
+      }
+
+      // -----------------------------------------------
+      // Check ownership
+      // -----------------------------------------------
+
+      if (
+        deployment.project.userId !==
+        req.user!.userId
+      ) {
+        return res.status(403).json({
+          message:
+            "You are not allowed to view this deployment"
+        });
+      }
+
+      // -----------------------------------------------
+      // Deployment must have workflow run
+      // -----------------------------------------------
+
+      if (!deployment.workflowRunId) {
+        return res.status(400).json({
+          message:
+            "Deployment has no GitHub Actions workflow run"
+        });
+      }
+
+      // -----------------------------------------------
+      // Extract GitHub repository
+      // -----------------------------------------------
+
+      const githubPath =
+        deployment.repositoryUrl
+          .replace("https://github.com/", "")
+          .replace(".git", "")
+          .replace(/\/$/, "");
+
+      const [owner, repo] =
+        githubPath.split("/");
+
+      if (!owner || !repo) {
+        return res.status(400).json({
+          message:
+            "Invalid GitHub repository URL"
+        });
+      }
+
+      // -----------------------------------------------
+      // Get job logs from GitHub
+      // -----------------------------------------------
+
+      const logs =
+        await getWorkflowJobLogs(
+          owner,
+          repo,
+          jobId
+        );
+
+      return res.json({
+        deploymentId,
+        jobId,
+        logs
+      });
+
+    } catch (error) {
+      console.error(
+        "Failed to fetch GitHub Actions job logs:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to fetch GitHub Actions job logs"
       });
     }
   }
