@@ -42,6 +42,9 @@ const API_BASE_URL = "http://localhost:5001";
 function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showSignup, setShowSignup] = useState(false);
   const [message, setMessage] = useState("");
 
   const [loggedIn, setLoggedIn] = useState(
@@ -87,6 +90,73 @@ function App() {
     () => deployments.filter((d) => d.status === "FAILED").length,
     [deployments]
   );
+
+  // ---------------- SIGNUP ----------------
+
+  const handleSignup = async () => {
+    try {
+      setMessage("");
+
+      if (!name.trim()) {
+        setMessage("Name is required");
+        return;
+      }
+
+      if (!email.trim()) {
+        setMessage("Email is required");
+        return;
+      }
+
+      if (!password) {
+        setMessage("Password is required");
+        return;
+      }
+
+      if (password.length < 6) {
+        setMessage("Password must be at least 6 characters");
+        return;
+      }
+
+      if (password !== confirmPassword) {
+        setMessage("Passwords do not match");
+        return;
+      }
+
+      setMessage("Creating account...");
+
+      const response = await fetch(
+        `${API_BASE_URL}/api/auth/register`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: name.trim(),
+            email: email.trim(),
+            password,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setMessage(data.message || "Signup failed");
+        return;
+      }
+
+      setName("");
+      setPassword("");
+      setConfirmPassword("");
+      setMessage("Account created successfully. Please sign in.");
+
+      setShowSignup(false);
+    } catch (error) {
+      console.error(error);
+      setMessage("Cannot connect to backend");
+    }
+  };
 
   // ---------------- LOGIN ----------------
 
@@ -665,7 +735,7 @@ if (deploymentId) {
     setDeployments([]);
   };
 
-  // ---------------- LOGIN SCREEN ----------------
+  // ---------------- LOGIN / SIGNUP SCREEN ----------------
 
   if (!loggedIn) {
     return (
@@ -674,79 +744,199 @@ if (deploymentId) {
         <div className="auth-glow glow-two" />
 
         <div className="auth-container">
+
           <div className="auth-brand">
             <div className="brand-mark">
               DF
             </div>
-
             <span>DeployFlow</span>
           </div>
 
           <div className="auth-card">
+
             <div className="auth-heading">
               <span className="eyebrow">
                 DEPLOYMENT PLATFORM
               </span>
 
-              <h1>Welcome back</h1>
+              <h1>
+                {showSignup
+                  ? "Create your account."
+                  : "Ship with confidence."}
+              </h1>
 
               <p>
-                Manage projects, deployments and
-                GitHub Actions from one place.
+                {showSignup
+                  ? "Create your DeployFlow account to manage your deployments."
+                  : "Deploy, monitor and manage your applications from one place."}
               </p>
             </div>
 
-            <div className="form-group">
-              <label>Email</label>
+            {showSignup ? (
+              <>
+                <div className="form-group">
+                  <label>Name</label>
 
-              <input
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) =>
-                  setEmail(e.target.value)
-                }
-              />
-            </div>
+                  <input
+                    type="text"
+                    placeholder="Your name"
+                    value={name}
+                    onChange={(e) =>
+                      setName(e.target.value)
+                    }
+                  />
+                </div>
 
-            <div className="form-group">
-              <div className="label-row">
-                <label>Password</label>
-              </div>
+                <div className="form-group">
+                  <label>Email</label>
 
-              <input
-                type="password"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) =>
-                  setPassword(e.target.value)
-                }
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    handleLogin();
-                  }
-                }}
-              />
-            </div>
+                  <input
+                    type="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) =>
+                      setEmail(e.target.value)
+                    }
+                  />
+                </div>
 
-            <button
-              className="primary-button full-width"
-              onClick={handleLogin}
-            >
-              Sign in
-              <span>→</span>
-            </button>
+                <div className="form-group">
+                  <label>Password</label>
 
-            {message && (
-              <div className="error-message">
-                {message}
-              </div>
+                  <input
+                    type="password"
+                    placeholder="Create a password"
+                    value={password}
+                    onChange={(e) =>
+                      setPassword(e.target.value)
+                    }
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Confirm Password</label>
+
+                  <input
+                    type="password"
+                    placeholder="Confirm your password"
+                    value={confirmPassword}
+                    onChange={(e) =>
+                      setConfirmPassword(e.target.value)
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        handleSignup();
+                      }
+                    }}
+                  />
+                </div>
+
+                <button
+                  className="primary-button full-width"
+                  onClick={handleSignup}
+                >
+                  Create Account
+                  <span>→</span>
+                </button>
+
+                {message && (
+                  <div className="error-message">
+                    {message}
+                  </div>
+                )}
+
+                <div className="auth-switch">
+                  <span>
+                    Already have an account?
+                  </span>
+
+                  <button
+                    type="button"
+                    className="auth-switch-button"
+                    onClick={() => {
+                      setShowSignup(false);
+                      setMessage("");
+                      setName("");
+                      setConfirmPassword("");
+                    }}
+                  >
+                    Sign in
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="form-group">
+                  <label>Email</label>
+
+                  <input
+                    type="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) =>
+                      setEmail(e.target.value)
+                    }
+                  />
+                </div>
+
+                <div className="form-group">
+                  <div className="label-row">
+                    <label>Password</label>
+                  </div>
+
+                  <input
+                    type="password"
+                    placeholder="Enter your password"
+                    value={password}
+                    onChange={(e) =>
+                      setPassword(e.target.value)
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        handleLogin();
+                      }
+                    }}
+                  />
+                </div>
+
+                <button
+                  className="primary-button full-width"
+                  onClick={handleLogin}
+                >
+                  Sign in
+                  <span>→</span>
+                </button>
+
+                {message && (
+                  <div className="error-message">
+                    {message}
+                  </div>
+                )}
+
+                <div className="auth-switch">
+                  <span>
+                    Don't have an account?
+                  </span>
+
+                  <button
+                    type="button"
+                    className="auth-switch-button"
+                    onClick={() => {
+                      setShowSignup(true);
+                      setMessage("");
+                    }}
+                  >
+                    Create account
+                  </button>
+                </div>
+              </>
             )}
 
             <div className="auth-footer">
               <span className="status-dot" />
               DeployFlow services ready
             </div>
+
           </div>
         </div>
       </div>
